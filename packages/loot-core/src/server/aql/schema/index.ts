@@ -105,6 +105,7 @@ export const schema = {
     hidden: f('boolean'),
     sort_order: f('float'),
     tombstone: f('boolean'),
+    parent_group_id: f('id', { ref: 'category_groups' }),
   },
   cleanup_groups: {
     id: f('id'),
