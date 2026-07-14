@@ -73,30 +73,52 @@ export function createCategory(cat, sheetName, prevSheetName) {
   }
 }
 
-export function createCategoryGroup(group, sheetName) {
+export function createCategoryGroup(group, sheetName, childGroups = []) {
+  // A group's total is its own categories PLUS its child groups'
+  // totals. Since child groups' cells are recursively built the same
+  // way, this naturally rolls all the way up the tree - no manual
+  // recursion needed here, the dependency graph handles it. Creation
+  // order between parent and child doesn't matter either: the graph
+  // lazily creates a placeholder node for any dependency name that
+  // doesn't exist yet, and computes everything in topological order.
   sheet.get().createDynamic(sheetName, 'group-sum-amount-' + group.id, {
     initialValue: 0,
-    dependencies: group.categories.map(cat => `sum-amount-${cat.id}`),
+    dependencies: [
+      ...group.categories.map(cat => `sum-amount-${cat.id}`),
+      ...childGroups.map(child => `group-sum-amount-${child.id}`),
+    ],
     run: sumAmounts,
   });
 
   if (!group.is_income) {
     sheet.get().createDynamic(sheetName, 'group-budget-' + group.id, {
       initialValue: 0,
-      dependencies: group.categories.map(cat => `budget-${cat.id}`),
+      dependencies: [
+        ...group.categories.map(cat => `budget-${cat.id}`),
+        ...childGroups.map(child => `group-budget-${child.id}`),
+      ],
       run: sumAmounts,
     });
 
     sheet.get().createDynamic(sheetName, 'group-leftover-' + group.id, {
       initialValue: 0,
-      dependencies: group.categories.map(cat => `leftover-${cat.id}`),
+      dependencies: [
+        ...group.categories.map(cat => `leftover-${cat.id}`),
+        ...childGroups.map(child => `group-leftover-${child.id}`),
+      ],
       run: sumAmounts,
     });
   }
 }
 
 export function createSummary(groups, categories, prevSheetName, sheetName) {
-  const incomeGroup = groups.filter(group => group.is_income)[0];
+  // Only top-level groups feed into the month's totals - a nested
+  // group's own contribution is already folded into its parent's
+  // group-sum-amount/group-budget/group-leftover cells recursively,
+  // so including it again here would double-count it.
+  const incomeGroup = groups.filter(
+    group => group.is_income && !group.parent_group_id,
+  )[0];
   const expenseCategories = categories.filter(cat => !cat.is_income);
   const incomeCategories = categories.filter(cat => cat.is_income);
 
@@ -150,7 +172,7 @@ export function createSummary(groups, categories, prevSheetName, sheetName) {
   sheet.get().createDynamic(sheetName, 'total-budgeted', {
     initialValue: 0,
     dependencies: groups
-      .filter(group => !group.is_income)
+      .filter(group => !group.is_income && !group.parent_group_id)
       .map(group => `group-budget-${group.id}`),
     run: (...amounts) => {
       // Negate budgeted amount
@@ -211,7 +233,7 @@ export function createSummary(groups, categories, prevSheetName, sheetName) {
   sheet.get().createDynamic(sheetName, 'total-spent', {
     initialValue: 0,
     dependencies: groups
-      .filter(group => !group.is_income)
+      .filter(group => !group.is_income && !group.parent_group_id)
       .map(group => `group-sum-amount-${group.id}`),
     run: sumAmounts,
   });
@@ -219,7 +241,7 @@ export function createSummary(groups, categories, prevSheetName, sheetName) {
   sheet.get().createDynamic(sheetName, 'total-leftover', {
     initialValue: 0,
     dependencies: groups
-      .filter(group => !group.is_income)
+      .filter(group => !group.is_income && !group.parent_group_id)
       .map(group => `group-leftover-${group.id}`),
     run: sumAmounts,
   });
@@ -323,38 +345,56 @@ export function handleCategoryChange(months, oldValue, newValue) {
 }
 
 export function handleCategoryGroupChange(months, oldValue, newValue) {
-  function addDeps(sheetName, groupId) {
+  // A group's own group-* cells feed either into its parent group's
+  // cells (if it's nested) or into the month's total-* cells (if
+  // it's top-level). This mirrors handleCategoryChange's addDeps just
+  // one level higher up the tree.
+  function addDeps(sheetName, groupId, parentId) {
+    const [budgetedTarget, spentTarget, leftoverTarget] = parentId
+      ? [
+          `group-budget-${parentId}`,
+          `group-sum-amount-${parentId}`,
+          `group-leftover-${parentId}`,
+        ]
+      : ['total-budgeted', 'total-spent', 'total-leftover'];
+
     sheet
       .get()
-      .addDependencies(sheetName, 'total-budgeted', [
-        `group-budget-${groupId}`,
-      ]);
+      .addDependencies(sheetName, budgetedTarget, [`group-budget-${groupId}`]);
     sheet
       .get()
-      .addDependencies(sheetName, 'total-spent', [
+      .addDependencies(sheetName, spentTarget, [
         `group-sum-amount-${groupId}`,
       ]);
     sheet
       .get()
-      .addDependencies(sheetName, 'total-leftover', [
+      .addDependencies(sheetName, leftoverTarget, [
         `group-leftover-${groupId}`,
       ]);
   }
 
-  function removeDeps(sheetName, groupId) {
+  function removeDeps(sheetName, groupId, parentId) {
+    const [budgetedTarget, spentTarget, leftoverTarget] = parentId
+      ? [
+          `group-budget-${parentId}`,
+          `group-sum-amount-${parentId}`,
+          `group-leftover-${parentId}`,
+        ]
+      : ['total-budgeted', 'total-spent', 'total-leftover'];
+
     sheet
       .get()
-      .removeDependencies(sheetName, 'total-budgeted', [
+      .removeDependencies(sheetName, budgetedTarget, [
         `group-budget-${groupId}`,
       ]);
     sheet
       .get()
-      .removeDependencies(sheetName, 'total-spent', [
+      .removeDependencies(sheetName, spentTarget, [
         `group-sum-amount-${groupId}`,
       ]);
     sheet
       .get()
-      .removeDependencies(sheetName, 'total-leftover', [
+      .removeDependencies(sheetName, leftoverTarget, [
         `group-leftover-${groupId}`,
       ]);
   }
@@ -363,7 +403,7 @@ export function handleCategoryGroupChange(months, oldValue, newValue) {
     const id = newValue.id;
     months.forEach(month => {
       const sheetName = monthUtils.sheetForMonth(month);
-      removeDeps(sheetName, id);
+      removeDeps(sheetName, id, oldValue.parent_group_id);
     });
   } else if (
     newValue.tombstone === 0 &&
@@ -384,10 +424,30 @@ export function handleCategoryGroupChange(months, oldValue, newValue) {
           [group.id],
           true,
         );
+        // A brand-new group can't already have children - nothing
+        // could have referenced it as a parent before it existed.
         createCategoryGroup({ ...group, categories }, sheetName);
 
-        addDeps(sheetName, group.id);
+        addDeps(sheetName, group.id, group.parent_group_id);
       });
     }
+  } else if (
+    oldValue &&
+    oldValue.parent_group_id !== newValue.parent_group_id
+  ) {
+    // The group moved to a different parent (or in/out of the top
+    // level) - rewire its contribution from the old parent (or
+    // totals) to the new one.
+    // NOTE: nothing can trigger this yet - there's no UI/API that sets
+    // parent_group_id after creation - so this branch is currently
+    // unexercised. It's here so the live-update path stays correct
+    // once group moving is built (layer 3).
+    const id = newValue.id;
+
+    months.forEach(month => {
+      const sheetName = monthUtils.sheetForMonth(month);
+      removeDeps(sheetName, id, oldValue.parent_group_id);
+      addDeps(sheetName, id, newValue.parent_group_id);
+    });
   }
 }

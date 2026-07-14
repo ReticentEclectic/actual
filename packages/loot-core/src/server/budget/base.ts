@@ -271,6 +271,18 @@ export async function createBudget(months) {
   );
   const categories = groups.flatMap(group => group.categories);
 
+  // A group's own group-* totals recursively fold in its children's
+  // totals (see envelope.ts/tracking.ts createCategoryGroup), so we
+  // need to know each group's direct children up front.
+  const childGroupsByParent = new Map<string, CategoryGroupEntity[]>();
+  groups.forEach(group => {
+    if (group.parent_group_id) {
+      const siblings = childGroupsByParent.get(group.parent_group_id) ?? [];
+      siblings.push(group);
+      childGroupsByParent.set(group.parent_group_id, siblings);
+    }
+  });
+
   sheet.startTransaction();
   const meta = sheet.get().meta();
   meta.createdMonths = meta.createdMonths || new Set();
@@ -335,10 +347,11 @@ export async function createBudget(months) {
       createCategory(cat, sheetName, prevSheetName, start, end);
     });
     groups.forEach(group => {
+      const childGroups = childGroupsByParent.get(group.id) ?? [];
       if (budgetType === 'envelope') {
-        envelopeBudget.createCategoryGroup(group, sheetName);
+        envelopeBudget.createCategoryGroup(group, sheetName, childGroups);
       } else {
-        trackingBudget.createCategoryGroup(group, sheetName);
+        trackingBudget.createCategoryGroup(group, sheetName, childGroups);
       }
     });
 
