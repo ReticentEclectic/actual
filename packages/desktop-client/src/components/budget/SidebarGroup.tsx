@@ -23,10 +23,13 @@ import { useContextMenu } from '#hooks/useContextMenu';
 import { useFeatureFlag } from '#hooks/useFeatureFlag';
 import { useGlobalPref } from '#hooks/useGlobalPref';
 
+import { SUBGROUP_INDENT_WIDTH } from './util';
+
 type SidebarGroupProps = {
   group: CategoryGroupEntity;
   editing?: boolean;
   collapsed: boolean;
+  depth?: number;
   dragPreview?: boolean;
   innerRef?: RefCallback<HTMLDivElement>;
   style?: CSSProperties;
@@ -49,6 +52,7 @@ export function SidebarGroup({
   group,
   editing,
   collapsed,
+  depth = 0,
   dragPreview,
   innerRef,
   style,
@@ -120,6 +124,7 @@ export function SidebarGroup({
         userSelect: 'none',
         WebkitUserSelect: 'none',
         height: 20,
+        paddingLeft: depth * SUBGROUP_INDENT_WIDTH,
       }}
       ref={triggerRef}
       onClick={() => {
@@ -244,7 +249,7 @@ export function SidebarGroup({
         onBlur={() => onEdit(null)}
         style={{ fontWeight: 600 }}
         inputProps={{
-          style: { marginLeft: 20 },
+          style: { marginLeft: 20 + depth * SUBGROUP_INDENT_WIDTH },
           placeholder: temporary ? t('New group name') : '',
         }}
       />

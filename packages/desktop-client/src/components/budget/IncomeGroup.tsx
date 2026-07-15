@@ -13,6 +13,7 @@ import { useBudgetComponents } from '.';
 
 type IncomeGroupProps = {
   group: CategoryGroupEntity;
+  depth: number;
   editingCell: { id: CategoryGroupEntity['id']; cell: string } | null;
   collapsed: boolean;
   onEditName: (id: CategoryGroupEntity['id']) => void;
@@ -27,6 +28,7 @@ type IncomeGroupProps = {
 
 export function IncomeGroup({
   group,
+  depth,
   editingCell,
   collapsed,
   onEditName,
@@ -46,6 +48,7 @@ export function IncomeGroup({
     >
       <SidebarGroup
         group={group}
+        depth={depth}
         collapsed={collapsed}
         editing={
           editingCell &&

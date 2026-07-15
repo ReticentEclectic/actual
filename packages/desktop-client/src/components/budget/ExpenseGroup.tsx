@@ -25,6 +25,7 @@ import { useBudgetComponents } from '.';
 
 type ExpenseGroupProps = {
   group: ComponentProps<typeof SidebarGroup>['group'];
+  depth: number;
   collapsed: boolean;
   editingCell: { id: string; cell: string } | null;
   dragState: DragState<CategoryEntity> | DragState<CategoryGroupEntity> | null;
@@ -46,6 +47,7 @@ type ExpenseGroupProps = {
 
 export function ExpenseGroup({
   group,
+  depth,
   collapsed,
   editingCell,
   dragState,
@@ -128,6 +130,7 @@ export function ExpenseGroup({
         <SidebarGroup
           innerRef={handleDragRef}
           group={group}
+          depth={depth}
           editing={
             editingCell &&
             editingCell.cell === 'name' &&

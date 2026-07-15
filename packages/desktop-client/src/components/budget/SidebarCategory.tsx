@@ -18,11 +18,13 @@ import { useContextMenu } from '#hooks/useContextMenu';
 import { useGlobalPref } from '#hooks/useGlobalPref';
 
 import { SidebarCategoryButtons } from './SidebarCategoryButtons';
+import { SUBGROUP_INDENT_WIDTH } from './util';
 
 type SidebarCategoryProps = {
   innerRef: Ref<HTMLDivElement>;
   category: CategoryEntity;
   categoryGroup?: CategoryGroupEntity;
+  depth?: number;
   dragPreview?: boolean;
   dragging?: boolean;
   goalsShown?: boolean;
@@ -47,6 +49,7 @@ export function SidebarCategory({
   innerRef,
   category,
   categoryGroup,
+  depth = 0,
   dragPreview,
   dragging,
   editing,
@@ -173,7 +176,10 @@ export function SidebarCategory({
           }
         }}
         onBlur={() => onEditName(null)}
-        style={{ paddingLeft: 13, ...(isLast && { borderBottomWidth: 0 }) }}
+        style={{
+          paddingLeft: 13 + depth * SUBGROUP_INDENT_WIDTH,
+          ...(isLast && { borderBottomWidth: 0 }),
+        }}
         inputProps={{
           placeholder: temporary ? t('New category name') : '',
         }}

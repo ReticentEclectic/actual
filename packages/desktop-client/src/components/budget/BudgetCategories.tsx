@@ -3,6 +3,7 @@ import React, { memo, useMemo, useState } from 'react';
 import { styles } from '@actual-app/components/styles';
 import { theme } from '@actual-app/components/theme';
 import { View } from '@actual-app/components/view';
+import type { CategoryGroupNode } from '@actual-app/core/shared/categories';
 import type {
   CategoryEntity,
   CategoryGroupEntity,
@@ -25,15 +26,16 @@ import { separateGroups } from './util';
 type BudgetItem =
   | { type: 'new-group' }
   | { type: 'new-category' }
-  | { type: 'expense-group'; value: CategoryGroupEntity }
+  | { type: 'expense-group'; value: CategoryGroupEntity; depth: number }
   | {
       type: 'expense-category';
       value: CategoryEntity;
       group: CategoryGroupEntity;
+      depth: number;
     }
   | { type: 'income-separator' }
-  | { type: 'income-group'; value: CategoryGroupEntity }
-  | { type: 'income-category'; value: CategoryEntity };
+  | { type: 'income-group'; value: CategoryGroupEntity; depth: number }
+  | { type: 'income-category'; value: CategoryEntity; depth: number };
 
 type LocalDragState =
   | DragState<CategoryEntity>
@@ -91,39 +93,83 @@ export const BudgetCategories = memo<BudgetCategoriesProps>(
     const items: BudgetItem[] = useMemo(() => {
       const [expenseGroups, incomeGroup] = separateGroups(categoryGroups);
 
-      let items: BudgetItem[] = Array.prototype.concat.apply(
-        [],
-        expenseGroups.map(group => {
-          if (group.hidden && !showHiddenCategories) {
-            return [];
-          }
+      function flattenExpenseGroup(
+        group: CategoryGroupNode,
+        depth: number,
+      ): BudgetItem[] {
+        if (group.hidden && !showHiddenCategories) {
+          return [];
+        }
 
-          const groupCategories = group.categories?.filter(
-            cat => showHiddenCategories || !cat.hidden,
-          );
+        const groupCategories = group.categories?.filter(
+          cat => showHiddenCategories || !cat.hidden,
+        );
 
-          const items: BudgetItem[] = [
-            { type: 'expense-group', value: { ...group } },
-          ];
+        const groupItems: BudgetItem[] = [
+          { type: 'expense-group', value: { ...group }, depth },
+        ];
 
-          if (newCategoryForGroup === group.id) {
-            items.push({ type: 'new-category' });
-          }
+        if (newCategoryForGroup === group.id) {
+          groupItems.push({ type: 'new-category' });
+        }
 
-          return [
-            ...items,
-            ...(collapsedGroupIds.includes(group.id)
-              ? []
-              : groupCategories || []
-            ).map(
-              (cat): BudgetItem => ({
-                type: 'expense-category',
-                value: cat,
-                group,
-              }),
-            ),
-          ];
-        }),
+        if (collapsedGroupIds.includes(group.id)) {
+          return groupItems;
+        }
+
+        return [
+          ...groupItems,
+          ...(groupCategories || []).map(
+            (cat): BudgetItem => ({
+              type: 'expense-category',
+              value: cat,
+              group,
+              depth,
+            }),
+          ),
+          ...(group.subgroups || []).flatMap(child =>
+            flattenExpenseGroup(child, depth + 1),
+          ),
+        ];
+      }
+
+      function flattenIncomeGroup(
+        group: CategoryGroupNode,
+        depth: number,
+      ): BudgetItem[] {
+        const groupItems: BudgetItem[] = [
+          { type: 'income-group', value: group, depth },
+        ];
+
+        if (newCategoryForGroup === group.id) {
+          groupItems.push({ type: 'new-category' });
+        }
+
+        if (collapsedGroupIds.includes(group.id)) {
+          return groupItems;
+        }
+
+        return [
+          ...groupItems,
+          ...(
+            group.categories?.filter(
+              cat => showHiddenCategories || !cat.hidden,
+            ) || []
+          ).map(
+            (cat): BudgetItem => ({
+              type: 'income-category',
+              value: cat,
+              depth,
+            }),
+          ),
+          ...(group.subgroups || []).flatMap(child =>
+            flattenIncomeGroup(child, depth + 1),
+          ),
+        ];
+      }
+
+      let items: BudgetItem[] = expenseGroups.flatMap(group =>
+        flattenExpenseGroup(group, 0),
       );
 
       if (isAddingGroup) {
@@ -131,30 +177,10 @@ export const BudgetCategories = memo<BudgetCategoriesProps>(
       }
 
       if (incomeGroup) {
-        const incomeCategoryItems: BudgetItem[] = [
+        items = items.concat([
           { type: 'income-separator' },
-          { type: 'income-group', value: incomeGroup },
-        ];
-
-        if (newCategoryForGroup === incomeGroup.id) {
-          incomeCategoryItems.push({ type: 'new-category' });
-        }
-
-        incomeCategoryItems.push(
-          ...(collapsedGroupIds.includes(incomeGroup.id)
-            ? []
-            : incomeGroup.categories?.filter(
-                cat => showHiddenCategories || !cat.hidden,
-              ) || []
-          ).map(
-            (cat): BudgetItem => ({
-              type: 'income-category',
-              value: cat,
-            }),
-          ),
-        );
-
-        items = items.concat(incomeCategoryItems);
+          ...flattenIncomeGroup(incomeGroup, 0),
+        ]);
       }
 
       return items;
@@ -294,6 +320,7 @@ export const BudgetCategories = memo<BudgetCategoriesProps>(
               content = (
                 <ExpenseGroup
                   group={item.value}
+                  depth={item.depth}
                   editingCell={editingCell}
                   collapsed={collapsedGroupIds.includes(item.value.id)}
                   dragState={dragState}
@@ -315,6 +342,7 @@ export const BudgetCategories = memo<BudgetCategoriesProps>(
                 <ExpenseCategory
                   cat={item.value}
                   categoryGroup={item.group}
+                  depth={item.depth}
                   editingCell={editingCell}
                   dragState={dragState}
                   onEditName={onEditName}
@@ -344,6 +372,7 @@ export const BudgetCategories = memo<BudgetCategoriesProps>(
               content = (
                 <IncomeGroup
                   group={item.value}
+                  depth={item.depth}
                   editingCell={editingCell}
                   collapsed={collapsedGroupIds.includes(item.value.id)}
                   onEditName={onEditName!}
@@ -358,6 +387,7 @@ export const BudgetCategories = memo<BudgetCategoriesProps>(
               content = (
                 <IncomeCategory
                   cat={item.value}
+                  depth={item.depth}
                   editingCell={editingCell}
                   isLast={idx === items.length - 1}
                   onEditName={onEditName}

@@ -3,6 +3,7 @@ import { styles } from '@actual-app/components/styles';
 import type { CSSProperties } from '@actual-app/components/styles';
 import { theme } from '@actual-app/components/theme';
 import { send } from '@actual-app/core/platform/client/connection';
+import { groupCategoryGroupsIntoTree } from '@actual-app/core/shared/categories';
 import * as monthUtils from '@actual-app/core/shared/months';
 import {
   currencyToAmount,
@@ -56,11 +57,13 @@ export function removeCategoriesFromGroups(
 }
 
 export function separateGroups(categoryGroups: CategoryGroupEntity[]) {
-  return [
-    categoryGroups.filter(g => !g.is_income),
-    categoryGroups.find(g => g.is_income),
-  ] as const;
+  const tree = groupCategoryGroupsIntoTree(categoryGroups);
+  return [tree.filter(g => !g.is_income), tree.find(g => g.is_income)] as const;
 }
+
+// How far, in pixels, each level of category-group nesting shifts a row.
+// Used by SidebarGroup and SidebarCategory to indent nested rows.
+export const SUBGROUP_INDENT_WIDTH = 14;
 
 export function makeAmountGrey(value: number | string | null): CSSProperties {
   return value === 0 || value === '0' || value === '' || value == null

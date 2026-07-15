@@ -26,6 +26,7 @@ import { useBudgetComponents } from '.';
 type ExpenseCategoryProps = {
   cat: CategoryEntity;
   categoryGroup?: CategoryGroupEntity;
+  depth: number;
   editingCell: { id: string; cell: string } | null;
   dragState: DragState<CategoryEntity> | DragState<CategoryGroupEntity> | null;
   onEditName?: ComponentProps<typeof SidebarCategory>['onEditName'];
@@ -41,6 +42,7 @@ type ExpenseCategoryProps = {
 export function ExpenseCategory({
   cat,
   categoryGroup,
+  depth,
   editingCell,
   dragState,
   onEditName,
@@ -90,6 +92,7 @@ export function ExpenseCategory({
           innerRef={handleDragRef}
           category={cat}
           categoryGroup={categoryGroup}
+          depth={depth}
           dragPreview={dragging && dragState.preview}
           dragging={dragging && !dragState.preview}
           editing={

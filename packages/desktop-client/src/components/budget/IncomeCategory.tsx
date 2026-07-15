@@ -16,6 +16,7 @@ import { useBudgetComponents } from '.';
 
 type IncomeCategoryProps = {
   cat: CategoryEntity;
+  depth: number;
   isLast?: boolean;
   editingCell: { id: CategoryEntity['id']; cell: string } | null;
   onEditName: ComponentProps<typeof SidebarCategory>['onEditName'];
@@ -30,6 +31,7 @@ type IncomeCategoryProps = {
 
 export function IncomeCategory({
   cat,
+  depth,
   isLast,
   editingCell,
   onEditName,
@@ -70,6 +72,7 @@ export function IncomeCategory({
       <SidebarCategory
         innerRef={handleDragRef}
         category={cat}
+        depth={depth}
         isLast={isLast}
         editing={
           editingCell &&
