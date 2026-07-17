@@ -24,7 +24,7 @@ import { SidebarGroup } from './SidebarGroup';
 import { separateGroups } from './util';
 
 type BudgetItem =
-  | { type: 'new-group' }
+  | { type: 'new-group'; depth: number; parentId?: CategoryGroupEntity['id'] }
   | { type: 'new-category' }
   | { type: 'expense-group'; value: CategoryGroupEntity; depth: number }
   | {
@@ -87,6 +87,9 @@ export const BudgetCategories = memo<BudgetCategoriesProps>(
     }
 
     const [isAddingGroup, setIsAddingGroup] = useState(false);
+    const [addingSubgroupForId, setAddingSubgroupForId] = useState<
+      CategoryGroupEntity['id'] | null
+    >(null);
     const [newCategoryForGroup, setNewCategoryForGroup] = useState<
       string | null
     >(null);
@@ -130,6 +133,15 @@ export const BudgetCategories = memo<BudgetCategoriesProps>(
           ...(group.subgroups || []).flatMap(child =>
             flattenExpenseGroup(child, depth + 1),
           ),
+          ...(addingSubgroupForId === group.id
+            ? [
+                {
+                  type: 'new-group' as const,
+                  depth: depth + 1,
+                  parentId: group.id,
+                },
+              ]
+            : []),
         ];
       }
 
@@ -165,6 +177,15 @@ export const BudgetCategories = memo<BudgetCategoriesProps>(
           ...(group.subgroups || []).flatMap(child =>
             flattenIncomeGroup(child, depth + 1),
           ),
+          ...(addingSubgroupForId === group.id
+            ? [
+                {
+                  type: 'new-group' as const,
+                  depth: depth + 1,
+                  parentId: group.id,
+                },
+              ]
+            : []),
         ];
       }
 
@@ -173,7 +194,7 @@ export const BudgetCategories = memo<BudgetCategoriesProps>(
       );
 
       if (isAddingGroup) {
-        items.push({ type: 'new-group' });
+        items.push({ type: 'new-group', depth: 0 });
       }
 
       if (incomeGroup) {
@@ -189,6 +210,7 @@ export const BudgetCategories = memo<BudgetCategoriesProps>(
       collapsedGroupIds,
       newCategoryForGroup,
       isAddingGroup,
+      addingSubgroupForId,
       showHiddenCategories,
     ]);
 
@@ -241,10 +263,20 @@ export const BudgetCategories = memo<BudgetCategoriesProps>(
       setIsAddingGroup(false);
     }
 
+    function onShowNewSubgroup(parentId: CategoryGroupEntity['id']) {
+      onCollapse(collapsedGroupIds.filter(c => c !== parentId));
+      setAddingSubgroupForId(parentId);
+    }
+
+    function onHideNewSubgroup() {
+      setAddingSubgroupForId(null);
+    }
+
     function _onSaveGroup(group: CategoryGroupEntity) {
       onSaveGroup?.(group);
       if (group.id === 'new') {
         onHideNewGroup();
+        onHideNewSubgroup();
       }
     }
 
@@ -284,11 +316,18 @@ export const BudgetCategories = memo<BudgetCategoriesProps>(
                   style={{ backgroundColor: theme.budgetHeaderCurrentMonth }}
                 >
                   <SidebarGroup
-                    group={{ id: 'new', name: '' }}
+                    group={{
+                      id: 'new',
+                      name: '',
+                      parent_group_id: item.parentId,
+                    }}
+                    depth={item.depth}
                     collapsed={false}
                     editing
                     onSave={_onSaveGroup}
-                    onHideNewGroup={onHideNewGroup}
+                    onHideNewGroup={
+                      item.parentId ? onHideNewSubgroup : onHideNewGroup
+                    }
                     onEdit={onEditName}
                   />
                 </Row>
@@ -332,6 +371,7 @@ export const BudgetCategories = memo<BudgetCategoriesProps>(
                   onReorderCategory={onReorderCategory}
                   onToggleCollapse={onToggleCollapse}
                   onShowNewCategory={onShowNewCategory}
+                  onShowNewSubgroup={onShowNewSubgroup}
                   onApplyBudgetTemplatesInGroup={onApplyBudgetTemplatesInGroup}
                   onSortCategories={onSortCategories}
                 />
@@ -380,6 +420,10 @@ export const BudgetCategories = memo<BudgetCategoriesProps>(
                   onSortCategories={onSortCategories}
                   onToggleCollapse={onToggleCollapse}
                   onShowNewCategory={onShowNewCategory!}
+                  onShowNewSubgroup={onShowNewSubgroup}
+                  onDelete={
+                    item.value.parent_group_id ? onDeleteGroup : undefined
+                  }
                 />
               );
               break;

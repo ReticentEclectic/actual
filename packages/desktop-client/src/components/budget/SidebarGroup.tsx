@@ -5,7 +5,10 @@ import { useTranslation } from 'react-i18next';
 
 import { Button } from '@actual-app/components/button';
 import { SvgAdd, SvgExpandArrow } from '@actual-app/components/icons/v0';
-import { SvgCheveronDown } from '@actual-app/components/icons/v1';
+import {
+  SvgCheveronDown,
+  SvgIndentIncrease,
+} from '@actual-app/components/icons/v1';
 import { Menu } from '@actual-app/components/menu';
 import { Text } from '@actual-app/components/text';
 import { theme } from '@actual-app/components/theme';
@@ -44,6 +47,7 @@ type SidebarGroupProps = {
     direction: 'asc' | 'desc',
   ) => void;
   onShowNewCategory?: (groupId: CategoryGroupEntity['id']) => void;
+  onShowNewSubgroup?: (groupId: CategoryGroupEntity['id']) => void;
   onHideNewGroup?: () => void;
   onToggleCollapse?: (id: CategoryGroupEntity['id']) => void;
 };
@@ -62,6 +66,7 @@ export function SidebarGroup({
   onApplyBudgetTemplatesInGroup,
   onSortCategories,
   onShowNewCategory,
+  onShowNewSubgroup,
   onHideNewGroup,
   onToggleCollapse,
 }: SidebarGroupProps) {
@@ -193,6 +198,26 @@ export function SidebarGroup({
               </Button>
             </Tooltip>
 
+            <Tooltip content={t('Add subgroup')} disablePointerEvents>
+              <Button
+                variant="bare"
+                aria-label={t('Add subgroup')}
+                className={cx(
+                  css({
+                    color: theme.pageTextLight,
+                  }),
+                  'hover-visible',
+                )}
+                onPress={() => {
+                  onShowNewSubgroup?.(group.id);
+                }}
+              >
+                <SvgIndentIncrease
+                  style={{ width: 12, height: 12, flexShrink: 0 }}
+                />
+              </Button>
+            </Tooltip>
+
             <NotesButton id={group.id} defaultColor={theme.pageTextLight} />
           </View>
         </>
@@ -240,7 +265,7 @@ export function SidebarGroup({
             if (value === '') {
               onHideNewGroup();
             } else if (value !== '') {
-              onSave({ id: group.id, name: value });
+              onSave({ ...group, name: value });
             }
           } else {
             onSave({ id: group.id, name: value });

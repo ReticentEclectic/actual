@@ -43,6 +43,7 @@ type ExpenseGroupProps = {
   onReorderCategory: OnDropCallback;
   onToggleCollapse?: ComponentProps<typeof SidebarGroup>['onToggleCollapse'];
   onShowNewCategory?: ComponentProps<typeof SidebarGroup>['onShowNewCategory'];
+  onShowNewSubgroup?: ComponentProps<typeof SidebarGroup>['onShowNewSubgroup'];
 };
 
 export function ExpenseGroup({
@@ -61,6 +62,7 @@ export function ExpenseGroup({
   onReorderCategory,
   onToggleCollapse,
   onShowNewCategory,
+  onShowNewSubgroup,
 }: ExpenseGroupProps) {
   const dragging = dragState && dragState.item === group;
 
@@ -145,6 +147,7 @@ export function ExpenseGroup({
           onApplyBudgetTemplatesInGroup={onApplyBudgetTemplatesInGroup}
           onSortCategories={onSortCategories}
           onShowNewCategory={onShowNewCategory}
+          onShowNewSubgroup={onShowNewSubgroup}
         />
         <RenderMonths>
           {({ month }) => <MonthComponent month={month} group={group} />}

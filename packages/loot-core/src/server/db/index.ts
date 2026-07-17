@@ -414,8 +414,22 @@ export async function moveCategoryGroup(
   id: DbCategoryGroup['id'],
   targetId?: DbCategoryGroup['id'] | null,
 ) {
+  // Reordering only makes sense among siblings - groups that share the
+  // same parent (or are all top-level). Without this scoping, a drag
+  // within a subgroup would compute a new sort_order relative to every
+  // group in the whole file, which can silently fail to change the
+  // group's position among its actual siblings once re-grouped by parent.
+  const group = await first<Pick<DbCategoryGroup, 'parent_group_id'>>(
+    'SELECT parent_group_id FROM category_groups WHERE id = ?',
+    [id],
+  );
+  const parentGroupId = group?.parent_group_id ?? null;
+
   const groups = await all<Pick<DbCategoryGroup, 'id' | 'sort_order'>>(
-    `SELECT id, sort_order FROM category_groups WHERE tombstone = 0 ORDER BY sort_order, id`,
+    parentGroupId
+      ? `SELECT id, sort_order FROM category_groups WHERE tombstone = 0 AND parent_group_id = ? ORDER BY sort_order, id`
+      : `SELECT id, sort_order FROM category_groups WHERE tombstone = 0 AND parent_group_id IS NULL ORDER BY sort_order, id`,
+    parentGroupId ? [parentGroupId] : [],
   );
 
   const { updates, sort_order } = shoveSortOrders(groups, targetId);

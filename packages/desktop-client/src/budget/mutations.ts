@@ -370,6 +370,7 @@ export function useReorderCategoryMutation() {
 
 type CreateCategoryGroupPayload = {
   name: CategoryGroupEntity['name'];
+  parentGroupId?: CategoryGroupEntity['id'];
 };
 
 export function useCreateCategoryGroupMutation() {
@@ -378,8 +379,8 @@ export function useCreateCategoryGroupMutation() {
   const { t } = useTranslation();
 
   return useMutation({
-    mutationFn: async ({ name }: CreateCategoryGroupPayload) => {
-      const id = await send('category-group-create', { name });
+    mutationFn: async ({ name, parentGroupId }: CreateCategoryGroupPayload) => {
+      const id = await send('category-group-create', { name, parentGroupId });
       return id;
     },
     onSuccess: () => invalidateQueries(queryClient),
@@ -452,7 +453,10 @@ export function useSaveCategoryGroupMutation() {
   return useMutation({
     mutationFn: async ({ group }: SaveCategoryGroupPayload) => {
       if (group.id === 'new') {
-        await createCategoryGroup.mutateAsync({ name: group.name });
+        await createCategoryGroup.mutateAsync({
+          name: group.name,
+          parentGroupId: group.parent_group_id ?? undefined,
+        });
       } else {
         await updateCategoryGroup.mutateAsync({ group });
       }

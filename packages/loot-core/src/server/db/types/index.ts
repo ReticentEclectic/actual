@@ -72,6 +72,7 @@ export type DbCategoryGroup = {
   sort_order: number;
   hidden: 1 | 0;
   tombstone: 1 | 0;
+  parent_group_id?: DbCategoryGroup['id'] | null;
 };
 
 export type DbCleanupGroup = {

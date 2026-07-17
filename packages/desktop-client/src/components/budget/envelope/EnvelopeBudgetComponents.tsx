@@ -551,10 +551,9 @@ export const ExpenseCategoryMonth = memo(function ExpenseCategoryMonth({
   );
 });
 
-type IncomeGroupMonthProps = {
-  month: string;
-};
-export function IncomeGroupMonth({ month }: IncomeGroupMonthProps) {
+export function IncomeGroupMonth({ month, group }: CategoryGroupMonthProps) {
+  const { id } = group;
+
   return (
     <View style={{ flex: 1 }}>
       <EnvelopeSheetCell
@@ -570,7 +569,7 @@ export function IncomeGroupMonth({ month }: IncomeGroupMonthProps) {
             : theme.budgetHeaderOtherMonth,
         }}
         valueProps={{
-          binding: envelopeBudget.groupIncomeReceived,
+          binding: envelopeBudget.groupSumAmount(id),
           type: 'financial',
         }}
       />

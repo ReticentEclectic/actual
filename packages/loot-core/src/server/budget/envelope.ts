@@ -411,26 +411,27 @@ export function handleCategoryGroupChange(months, oldValue, newValue) {
   ) {
     const group = newValue;
 
-    if (!group.is_income) {
-      months.forEach(month => {
-        const sheetName = monthUtils.sheetForMonth(month);
+    months.forEach(month => {
+      const sheetName = monthUtils.sheetForMonth(month);
 
-        // Dirty, dirty hack. These functions should not be async, but this is
-        // OK because we're leveraging the sync nature of queries. Ideally we
-        // wouldn't be querying here. But I think we have to. At least for now
-        // we do
-        const categories = db.runQuery(
-          'SELECT * FROM categories WHERE tombstone = 0 AND cat_group = ?',
-          [group.id],
-          true,
-        );
-        // A brand-new group can't already have children - nothing
-        // could have referenced it as a parent before it existed.
-        createCategoryGroup({ ...group, categories }, sheetName);
+      // Dirty, dirty hack. These functions should not be async, but this is
+      // OK because we're leveraging the sync nature of queries. Ideally we
+      // wouldn't be querying here. But I think we have to. At least for now
+      // we do
+      const categories = db.runQuery(
+        'SELECT * FROM categories WHERE tombstone = 0 AND cat_group = ?',
+        [group.id],
+        true,
+      );
+      // A brand-new group can't already have children - nothing
+      // could have referenced it as a parent before it existed. This
+      // runs for income and expense groups alike - createCategoryGroup
+      // itself already handles the is_income distinction internally
+      // (it skips group-budget/group-leftover for income groups).
+      createCategoryGroup({ ...group, categories }, sheetName);
 
-        addDeps(sheetName, group.id, group.parent_group_id);
-      });
-    }
+      addDeps(sheetName, group.id, group.parent_group_id);
+    });
   } else if (
     oldValue &&
     oldValue.parent_group_id !== newValue.parent_group_id

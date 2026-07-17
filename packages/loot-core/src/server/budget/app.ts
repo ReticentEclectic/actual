@@ -430,15 +430,36 @@ async function createCategoryGroup({
   name,
   isIncome,
   hidden,
+  parentGroupId,
 }: {
   name: CategoryGroupEntity['name'];
   isIncome?: CategoryGroupEntity['is_income'];
   hidden?: CategoryGroupEntity['hidden'];
+  parentGroupId?: CategoryGroupEntity['id'];
 }): Promise<CategoryGroupEntity['id']> {
+  let is_income: 0 | 1 = isIncome ? 1 : 0;
+
+  if (parentGroupId) {
+    const parent = await db.first<Pick<db.DbCategoryGroup, 'is_income'>>(
+      'SELECT is_income FROM category_groups WHERE id = ? AND tombstone = 0',
+      [parentGroupId],
+    );
+    if (!parent) {
+      throw APIError(
+        `Creating a category group: parent group ${parentGroupId} not found`,
+      );
+    }
+    // A subgroup always inherits its parent's income/expense type.
+    // SQLite can't express this as a constraint, so it's enforced
+    // here rather than trusting whatever the client sent.
+    is_income = parent.is_income;
+  }
+
   return await db.insertCategoryGroup({
     name,
-    is_income: isIncome ? 1 : 0,
+    is_income,
     hidden: hidden ? 1 : 0,
+    parent_group_id: parentGroupId ?? null,
   });
 }
 
