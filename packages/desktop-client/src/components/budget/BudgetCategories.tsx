@@ -21,7 +21,7 @@ import { IncomeGroup } from './IncomeGroup';
 import { IncomeHeader } from './IncomeHeader';
 import { SidebarCategory } from './SidebarCategory';
 import { SidebarGroup } from './SidebarGroup';
-import { separateGroups } from './util';
+import { getIndentTarget, getOutdentTarget, separateGroups } from './util';
 
 type BudgetItem =
   | { type: 'new-group'; depth: number; parentId?: CategoryGroupEntity['id'] }
@@ -60,6 +60,8 @@ type BudgetCategoriesProps = {
   ) => void;
   onReorderCategory: OnDropCallback;
   onReorderGroup: OnDropCallback;
+  onIndentGroup: (id: CategoryGroupEntity['id']) => void;
+  onOutdentGroup: (id: CategoryGroupEntity['id']) => void;
 };
 
 export const BudgetCategories = memo<BudgetCategoriesProps>(
@@ -78,6 +80,8 @@ export const BudgetCategories = memo<BudgetCategoriesProps>(
     onSortCategories,
     onReorderCategory,
     onReorderGroup,
+    onIndentGroup,
+    onOutdentGroup,
   }) => {
     const [collapsedGroupIds = [], setCollapsedGroupIdsPref] =
       useLocalPref('budget.collapsed');
@@ -372,6 +376,16 @@ export const BudgetCategories = memo<BudgetCategoriesProps>(
                   onToggleCollapse={onToggleCollapse}
                   onShowNewCategory={onShowNewCategory}
                   onShowNewSubgroup={onShowNewSubgroup}
+                  onIndent={
+                    getIndentTarget(categoryGroups, item.value)
+                      ? () => onIndentGroup(item.value.id)
+                      : undefined
+                  }
+                  onOutdent={
+                    getOutdentTarget(categoryGroups, item.value)
+                      ? () => onOutdentGroup(item.value.id)
+                      : undefined
+                  }
                   onApplyBudgetTemplatesInGroup={onApplyBudgetTemplatesInGroup}
                   onSortCategories={onSortCategories}
                 />
@@ -421,6 +435,16 @@ export const BudgetCategories = memo<BudgetCategoriesProps>(
                   onToggleCollapse={onToggleCollapse}
                   onShowNewCategory={onShowNewCategory!}
                   onShowNewSubgroup={onShowNewSubgroup}
+                  onIndent={
+                    getIndentTarget(categoryGroups, item.value)
+                      ? () => onIndentGroup(item.value.id)
+                      : undefined
+                  }
+                  onOutdent={
+                    getOutdentTarget(categoryGroups, item.value)
+                      ? () => onOutdentGroup(item.value.id)
+                      : undefined
+                  }
                   onDelete={
                     item.value.parent_group_id ? onDeleteGroup : undefined
                   }

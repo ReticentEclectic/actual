@@ -48,6 +48,8 @@ type SidebarGroupProps = {
   ) => void;
   onShowNewCategory?: (groupId: CategoryGroupEntity['id']) => void;
   onShowNewSubgroup?: (groupId: CategoryGroupEntity['id']) => void;
+  onIndent?: () => void;
+  onOutdent?: () => void;
   onHideNewGroup?: () => void;
   onToggleCollapse?: (id: CategoryGroupEntity['id']) => void;
 };
@@ -67,6 +69,8 @@ export function SidebarGroup({
   onSortCategories,
   onShowNewCategory,
   onShowNewSubgroup,
+  onIndent,
+  onOutdent,
   onHideNewGroup,
   onToggleCollapse,
 }: SidebarGroupProps) {
@@ -97,6 +101,17 @@ export function SidebarGroup({
         name: 'delete',
         text: t('Delete'),
         onClick: () => onDelete(group.id),
+      },
+      (onIndent || onOutdent) && Menu.line,
+      onIndent && {
+        name: 'indent',
+        text: t('Increase indent'),
+        onClick: () => onIndent(),
+      },
+      onOutdent && {
+        name: 'outdent',
+        text: t('Decrease indent'),
+        onClick: () => onOutdent(),
       },
       canSortCategories && Menu.line,
       canSortCategories && {

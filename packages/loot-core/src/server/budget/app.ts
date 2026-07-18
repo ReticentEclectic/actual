@@ -470,12 +470,70 @@ async function updateCategoryGroup(group: CategoryGroupEntity) {
 async function moveCategoryGroup({
   id,
   targetId,
+  parentGroupId,
 }: {
   id: CategoryGroupEntity['id'];
   targetId: CategoryGroupEntity['id'] | null;
+  parentGroupId?: CategoryGroupEntity['id'] | null;
 }): Promise<void> {
   await batchMessages(async () => {
-    await db.moveCategoryGroup(id, targetId);
+    if (parentGroupId === undefined) {
+      // Plain reorder among current siblings - parent is unchanged.
+      await db.moveCategoryGroup(id, targetId);
+      return;
+    }
+
+    const [group, parent] = await Promise.all([
+      db.first<Pick<db.DbCategoryGroup, 'is_income'>>(
+        'SELECT is_income FROM category_groups WHERE id = ?',
+        [id],
+      ),
+      parentGroupId
+        ? db.first<Pick<db.DbCategoryGroup, 'is_income'>>(
+            'SELECT is_income FROM category_groups WHERE id = ? AND tombstone = 0',
+            [parentGroupId],
+          )
+        : null,
+    ]);
+
+    if (!group) {
+      throw APIError(`Moving a category group: group ${id} not found`);
+    }
+    if (parentGroupId && !parent) {
+      throw APIError(
+        `Moving a category group: parent group ${parentGroupId} not found`,
+      );
+    }
+    // Same enforcement as creation: a group can't move to a parent of a
+    // different income/expense type. Checked here too, not just filtered
+    // out of whatever picker the client shows, since the client's choices
+    // shouldn't be the only thing standing between this and corrupt data.
+    if (parentGroupId && parent && parent.is_income !== group.is_income) {
+      throw APIError(
+        'Moving a category group: cannot move a group to a parent of a different income/expense type',
+      );
+    }
+
+    // There's always exactly one top-level income group - the budget
+    // math and the sidebar rendering both assume it. Moving a second
+    // is_income group to the top level wouldn't fail, it would just
+    // silently vanish from the budget, since nothing looks past the
+    // first one it finds.
+    if (parentGroupId === null && group.is_income) {
+      const existingTopLevelIncomeGroup = await db.first<
+        Pick<db.DbCategoryGroup, 'id'>
+      >(
+        'SELECT id FROM category_groups WHERE is_income = 1 AND parent_group_id IS NULL AND tombstone = 0 AND id != ?',
+        [id],
+      );
+      if (existingTopLevelIncomeGroup) {
+        throw APIError(
+          'Moving a category group: there can only be one top-level income group',
+        );
+      }
+    }
+
+    await db.moveCategoryGroup(id, targetId, parentGroupId);
   });
 }
 

@@ -25,6 +25,8 @@ type IncomeGroupProps = {
   onToggleCollapse: (id: CategoryGroupEntity['id']) => void;
   onShowNewCategory: (groupId: CategoryGroupEntity['id']) => void;
   onShowNewSubgroup?: (groupId: CategoryGroupEntity['id']) => void;
+  onIndent?: () => void;
+  onOutdent?: () => void;
   onDelete?: (id: CategoryGroupEntity['id']) => void;
 };
 
@@ -39,6 +41,8 @@ export function IncomeGroup({
   onToggleCollapse,
   onShowNewCategory,
   onShowNewSubgroup,
+  onIndent,
+  onOutdent,
   onDelete,
 }: IncomeGroupProps) {
   const { IncomeGroupComponent: MonthComponent } = useBudgetComponents();
@@ -65,6 +69,8 @@ export function IncomeGroup({
         onToggleCollapse={onToggleCollapse}
         onShowNewCategory={onShowNewCategory}
         onShowNewSubgroup={onShowNewSubgroup}
+        onIndent={onIndent}
+        onOutdent={onOutdent}
         onDelete={onDelete}
       />
       <RenderMonths>

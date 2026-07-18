@@ -61,6 +61,79 @@ export function separateGroups(categoryGroups: CategoryGroupEntity[]) {
   return [tree.filter(g => !g.is_income), tree.find(g => g.is_income)] as const;
 }
 
+type GroupReparentTarget = {
+  parentGroupId: CategoryGroupEntity['id'] | null;
+  targetId: CategoryGroupEntity['id'] | null;
+};
+
+function siblingsOf(
+  categoryGroups: CategoryGroupEntity[],
+  parentGroupId: CategoryGroupEntity['id'] | null,
+) {
+  return categoryGroups
+    .filter(g => (g.parent_group_id ?? null) === parentGroupId)
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+}
+
+// "Increase indent" - nest a group under the sibling immediately above
+// it, becoming that sibling's last child. Unavailable if the group is
+// already first among its siblings, or if the sibling above it is a
+// different income/expense type (nesting must keep types consistent -
+// same rule enforced server-side in budget/app.ts's moveCategoryGroup).
+export function getIndentTarget(
+  categoryGroups: CategoryGroupEntity[],
+  group: CategoryGroupEntity,
+): GroupReparentTarget | null {
+  const siblings = siblingsOf(categoryGroups, group.parent_group_id ?? null);
+  const index = siblings.findIndex(g => g.id === group.id);
+  const prevSibling = siblings[index - 1];
+
+  if (!prevSibling || prevSibling.is_income !== group.is_income) {
+    return null;
+  }
+
+  return { parentGroupId: prevSibling.id, targetId: null };
+}
+
+// "Decrease indent" - promote a group to be its own parent's next
+// sibling, moving up one level. Unavailable if the group is already
+// top-level (nothing to promote out of).
+export function getOutdentTarget(
+  categoryGroups: CategoryGroupEntity[],
+  group: CategoryGroupEntity,
+): GroupReparentTarget | null {
+  const parentId = group.parent_group_id;
+  if (!parentId) {
+    return null;
+  }
+
+  const parent = categoryGroups.find(g => g.id === parentId);
+  if (!parent) {
+    return null;
+  }
+
+  const grandparentId = parent.parent_group_id ?? null;
+
+  // There's always exactly one top-level income group - the budget math
+  // and the sidebar rendering both assume it (they grab the first
+  // top-level is_income group they find and ignore any others).
+  // Outdenting a direct child of it would create a second one, which
+  // nothing expects, so it's silently not offered rather than left to
+  // produce a group that quietly disappears from the budget.
+  if (grandparentId === null && group.is_income) {
+    return null;
+  }
+
+  const parentSiblings = siblingsOf(categoryGroups, grandparentId);
+  const parentIndex = parentSiblings.findIndex(g => g.id === parentId);
+  const nextSiblingOfParent = parentSiblings[parentIndex + 1];
+
+  return {
+    parentGroupId: grandparentId,
+    targetId: nextSiblingOfParent ? nextSiblingOfParent.id : null,
+  };
+}
+
 // How far, in pixels, each level of category-group nesting shifts a row.
 // Used by SidebarGroup and SidebarCategory to indent nested rows.
 export const SUBGROUP_INDENT_WIDTH = 14;

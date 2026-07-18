@@ -15,6 +15,7 @@ import {
   useBudgetActions,
   useDeleteCategoryGroupMutation,
   useDeleteCategoryMutation,
+  useMoveCategoryGroupMutation,
   useReorderCategoryGroupMutation,
   useReorderCategoryMutation,
   useSaveCategoryGroupMutation,
@@ -34,7 +35,12 @@ import * as envelopeBudget from './envelope/EnvelopeBudgetComponents';
 import { EnvelopeBudgetProvider } from './envelope/EnvelopeBudgetContext';
 import * as trackingBudget from './tracking/TrackingBudgetComponents';
 import { TrackingBudgetProvider } from './tracking/TrackingBudgetContext';
-import { prewarmAllMonths, prewarmMonth } from './util';
+import {
+  getIndentTarget,
+  getOutdentTarget,
+  prewarmAllMonths,
+  prewarmMonth,
+} from './util';
 
 export function Budget() {
   const currentMonth = monthUtils.currentMonth();
@@ -168,6 +174,21 @@ export function Budget() {
     deleteCategoryGroup.mutate({ id });
   };
   const reorderCategoryGroup = useReorderCategoryGroupMutation();
+  const moveCategoryGroup = useMoveCategoryGroupMutation();
+  const onIndentGroup = (id: CategoryGroupEntity['id']) => {
+    const group = categoryGroups.find(g => g.id === id);
+    const target = group && getIndentTarget(categoryGroups, group);
+    if (target) {
+      moveCategoryGroup.mutate({ id, ...target });
+    }
+  };
+  const onOutdentGroup = (id: CategoryGroupEntity['id']) => {
+    const group = categoryGroups.find(g => g.id === id);
+    const target = group && getOutdentTarget(categoryGroups, group);
+    if (target) {
+      moveCategoryGroup.mutate({ id, ...target });
+    }
+  };
   const sortCategories = useSortCategoriesMutation();
   const applyBudgetAction = useBudgetActions();
 
@@ -202,6 +223,8 @@ export function Budget() {
           onShowActivity={onShowActivity}
           onReorderCategory={reorderCategory.mutate}
           onReorderGroup={reorderCategoryGroup.mutate}
+          onIndentGroup={onIndentGroup}
+          onOutdentGroup={onOutdentGroup}
           onApplyBudgetTemplatesInGroup={onApplyBudgetTemplatesInGroup}
           onSortCategories={(groupId, direction) =>
             sortCategories.mutate({ groupId, direction })
@@ -231,6 +254,8 @@ export function Budget() {
           onShowActivity={onShowActivity}
           onReorderCategory={reorderCategory.mutate}
           onReorderGroup={reorderCategoryGroup.mutate}
+          onIndentGroup={onIndentGroup}
+          onOutdentGroup={onOutdentGroup}
           onApplyBudgetTemplatesInGroup={onApplyBudgetTemplatesInGroup}
           onSortCategories={(groupId, direction) =>
             sortCategories.mutate({ groupId, direction })

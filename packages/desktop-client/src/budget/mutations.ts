@@ -530,6 +530,7 @@ export function useDeleteCategoryGroupMutation() {
 type MoveCategoryGroupPayload = {
   id: CategoryGroupEntity['id'];
   targetId: CategoryGroupEntity['id'] | null;
+  parentGroupId?: CategoryGroupEntity['id'] | null;
 };
 
 export function useMoveCategoryGroupMutation() {
@@ -538,8 +539,12 @@ export function useMoveCategoryGroupMutation() {
   const { t } = useTranslation();
 
   return useMutation({
-    mutationFn: async ({ id, targetId }: MoveCategoryGroupPayload) => {
-      await send('category-group-move', { id, targetId });
+    mutationFn: async ({
+      id,
+      targetId,
+      parentGroupId,
+    }: MoveCategoryGroupPayload) => {
+      await send('category-group-move', { id, targetId, parentGroupId });
     },
     onSuccess: () => invalidateQueries(queryClient),
     onError: error => {

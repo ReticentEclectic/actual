@@ -413,17 +413,25 @@ export async function updateCategoryGroup(
 export async function moveCategoryGroup(
   id: DbCategoryGroup['id'],
   targetId?: DbCategoryGroup['id'] | null,
+  newParentGroupId?: DbCategoryGroup['id'] | null,
 ) {
   // Reordering only makes sense among siblings - groups that share the
   // same parent (or are all top-level). Without this scoping, a drag
   // within a subgroup would compute a new sort_order relative to every
   // group in the whole file, which can silently fail to change the
   // group's position among its actual siblings once re-grouped by parent.
-  const group = await first<Pick<DbCategoryGroup, 'parent_group_id'>>(
-    'SELECT parent_group_id FROM category_groups WHERE id = ?',
-    [id],
-  );
-  const parentGroupId = group?.parent_group_id ?? null;
+  let parentGroupId: DbCategoryGroup['id'] | null;
+  if (newParentGroupId !== undefined) {
+    // Caller wants this group moved under a (possibly different) parent -
+    // reorder among that parent's children instead of the current ones.
+    parentGroupId = newParentGroupId;
+  } else {
+    const group = await first<Pick<DbCategoryGroup, 'parent_group_id'>>(
+      'SELECT parent_group_id FROM category_groups WHERE id = ?',
+      [id],
+    );
+    parentGroupId = group?.parent_group_id ?? null;
+  }
 
   const groups = await all<Pick<DbCategoryGroup, 'id' | 'sort_order'>>(
     parentGroupId
@@ -436,7 +444,13 @@ export async function moveCategoryGroup(
   for (const info of updates) {
     await update('category_groups', info);
   }
-  await update('category_groups', { id, sort_order });
+  await update('category_groups', {
+    id,
+    sort_order,
+    ...(newParentGroupId !== undefined
+      ? { parent_group_id: parentGroupId }
+      : {}),
+  });
 }
 
 export async function deleteCategoryGroup(
