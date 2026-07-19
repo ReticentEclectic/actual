@@ -544,6 +544,22 @@ async function deleteCategoryGroup({
   id: CategoryGroupEntity['id'];
   transferId?: CategoryGroupEntity['id'] | null;
 }): Promise<void> {
+  // A group with subgroups can't be deleted outright - there's no safe
+  // default for what should happen to them (auto-promoting them or
+  // cascade-deleting them are both surprising restructurings the user
+  // didn't explicitly ask for), so the user has to move or delete the
+  // subgroups first, the same way deleting a category with transactions
+  // requires picking a transfer target rather than guessing one.
+  const childGroups = await db.all<Pick<CategoryGroupEntity, 'id' | 'name'>>(
+    'SELECT id, name FROM category_groups WHERE parent_group_id = ? AND tombstone = 0',
+    [id],
+  );
+  if (childGroups.length > 0) {
+    throw APIError(
+      `Deleting a category group: cannot delete a group that has subgroups (${childGroups.map(g => g.name).join(', ')}). Move or delete them first.`,
+    );
+  }
+
   const groupCategories = await db.all<Pick<CategoryEntity, 'id'>>(
     'SELECT id FROM categories WHERE cat_group = ? AND tombstone = 0',
     [id],

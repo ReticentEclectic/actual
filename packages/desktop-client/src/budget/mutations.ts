@@ -484,6 +484,21 @@ export function useDeleteCategoryGroupMutation() {
         return;
       }
 
+      const subgroups = categoryGroups.filter(g => g.parent_group_id === id);
+      if (subgroups.length > 0) {
+        dispatchErrorNotification(
+          dispatch,
+          t(
+            'Cannot delete "{{name}}" because it has subgroups ({{subgroupNames}}). Move or delete them first.',
+            {
+              name: group.name,
+              subgroupNames: subgroups.map(g => g.name).join(', '),
+            },
+          ),
+        );
+        return;
+      }
+
       const categories = group.categories ?? [];
 
       let mustTransfer = false;
