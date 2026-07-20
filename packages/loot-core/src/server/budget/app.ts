@@ -514,6 +514,30 @@ async function moveCategoryGroup({
       );
     }
 
+    // Walk up from the proposed new parent - if the group being moved
+    // ever appears in its own ancestor chain, this move would make it
+    // its own descendant. Drag-and-drop is the only caller that can
+    // actually trigger this (indent/outdent's targets are always a
+    // sibling or a grandparent, both structurally impossible to be a
+    // descendant), but it's checked here rather than trusted to the
+    // client regardless of which caller it is.
+    if (parentGroupId) {
+      let current: CategoryGroupEntity['id'] | null = parentGroupId;
+      while (current) {
+        if (current === id) {
+          throw APIError(
+            'Moving a category group: cannot move a group into its own subtree',
+          );
+        }
+        const row: Pick<db.DbCategoryGroup, 'parent_group_id'> | null =
+          await db.first(
+            'SELECT parent_group_id FROM category_groups WHERE id = ?',
+            [current],
+          );
+        current = row?.parent_group_id ?? null;
+      }
+    }
+
     // There's always exactly one top-level income group - the budget
     // math and the sidebar rendering both assume it. Moving a second
     // is_income group to the top level wouldn't fail, it would just

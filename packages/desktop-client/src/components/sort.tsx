@@ -22,7 +22,7 @@ export type DragState<T> = {
   preview?: boolean;
 };
 
-export type DropPosition = 'top' | 'bottom';
+export type DropPosition = 'top' | 'bottom' | 'on';
 
 export type OnDragChangeCallback<T> = (
   drag: DragState<T>,
@@ -85,6 +85,12 @@ type UseDroppableArgs = {
   id: string;
   onDrop: OnDropCallback;
   onLongHover?: OnLongHoverCallback;
+  // When true, hovering the middle of the row yields 'on' (drop onto
+  // this item) in addition to 'top'/'bottom' (drop near it). Used for
+  // group rows, which can be nested into as well as reordered; category
+  // rows can't have children, so they stick to the plain 'top'/'bottom'
+  // behavior.
+  allowNestDrop?: boolean;
 };
 
 export function useDroppable<T extends { id: string }>({
@@ -92,6 +98,7 @@ export function useDroppable<T extends { id: string }>({
   id,
   onDrop,
   onLongHover,
+  allowNestDrop = false,
 }: UseDroppableArgs) {
   const ref = useRef<HTMLDivElement | null>(null);
   const onLongHoverRef = useRef(onLongHover);
@@ -109,12 +116,26 @@ export function useDroppable<T extends { id: string }>({
     hover(_, monitor) {
       if (!ref.current) return;
       const hoverBoundingRect = ref.current.getBoundingClientRect();
-      const hoverMiddleY =
-        (hoverBoundingRect.bottom - hoverBoundingRect.top) / 2;
       const clientOffset = monitor.getClientOffset();
       if (!clientOffset) return;
+      const hoverHeight = hoverBoundingRect.bottom - hoverBoundingRect.top;
       const hoverClientY = clientOffset.y - hoverBoundingRect.top;
-      const pos: DropPosition = hoverClientY < hoverMiddleY ? 'top' : 'bottom';
+
+      let pos: DropPosition;
+      if (allowNestDrop) {
+        const topBoundary = hoverHeight * 0.25;
+        const bottomBoundary = hoverHeight * 0.75;
+        if (hoverClientY < topBoundary) {
+          pos = 'top';
+        } else if (hoverClientY > bottomBoundary) {
+          pos = 'bottom';
+        } else {
+          pos = 'on';
+        }
+      } else {
+        const hoverMiddleY = hoverHeight / 2;
+        pos = hoverClientY < hoverMiddleY ? 'top' : 'bottom';
+      }
 
       setDropPos(pos);
     },
@@ -151,8 +172,8 @@ type ItemPosition = 'first' | 'last' | null;
 export const DropHighlightPosContext = createContext<ItemPosition>(null);
 
 type DropHighlightProps = {
-  // Supports legacy ('top'/'bottom') and react-aria ('before'/'after'/'on') positions
-  // 'on' is not used in our UI but is included for type compatibility
+  // Supports legacy ('top'/'bottom'/'on') and react-aria
+  // ('before'/'after'/'on') positions.
   pos: DropPosition | AriaDropPosition | null;
   offset?: {
     top?: number;
@@ -162,9 +183,26 @@ type DropHighlightProps = {
 export function DropHighlight({ pos, offset }: DropHighlightProps) {
   const itemPos = useContext(DropHighlightPosContext);
 
-  // 'on' position is not supported for highlight (used for dropping onto items, not between)
-  if (pos == null || pos === 'on') {
+  if (pos == null) {
     return null;
+  }
+
+  if (pos === 'on') {
+    return (
+      <View
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          borderRadius: 4,
+          border: `2px solid ${theme.pageTextLink}`,
+          zIndex: 10000,
+          pointerEvents: 'none',
+        }}
+      />
+    );
   }
 
   const topOffset = (itemPos === 'first' ? 2 : 0) + (offset?.top || 0);

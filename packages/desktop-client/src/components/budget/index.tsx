@@ -16,7 +16,6 @@ import {
   useDeleteCategoryGroupMutation,
   useDeleteCategoryMutation,
   useMoveCategoryGroupMutation,
-  useReorderCategoryGroupMutation,
   useReorderCategoryMutation,
   useSaveCategoryGroupMutation,
   useSaveCategoryMutation,
@@ -173,7 +172,6 @@ export function Budget() {
   const onDeleteCategoryGroup = id => {
     deleteCategoryGroup.mutate({ id });
   };
-  const reorderCategoryGroup = useReorderCategoryGroupMutation();
   const moveCategoryGroup = useMoveCategoryGroupMutation();
   const onIndentGroup = (id: CategoryGroupEntity['id']) => {
     const group = categoryGroups.find(g => g.id === id);
@@ -222,7 +220,7 @@ export function Budget() {
           onBudgetAction={onBudgetAction}
           onShowActivity={onShowActivity}
           onReorderCategory={reorderCategory.mutate}
-          onReorderGroup={reorderCategoryGroup.mutate}
+          onReorderGroup={moveCategoryGroup.mutate}
           onIndentGroup={onIndentGroup}
           onOutdentGroup={onOutdentGroup}
           onApplyBudgetTemplatesInGroup={onApplyBudgetTemplatesInGroup}
@@ -253,7 +251,7 @@ export function Budget() {
           onBudgetAction={onBudgetAction}
           onShowActivity={onShowActivity}
           onReorderCategory={reorderCategory.mutate}
-          onReorderGroup={reorderCategoryGroup.mutate}
+          onReorderGroup={moveCategoryGroup.mutate}
           onIndentGroup={onIndentGroup}
           onOutdentGroup={onOutdentGroup}
           onApplyBudgetTemplatesInGroup={onApplyBudgetTemplatesInGroup}

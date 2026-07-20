@@ -26,7 +26,12 @@ import { getIndentTarget, getOutdentTarget, separateGroups } from './util';
 type BudgetItem =
   | { type: 'new-group'; depth: number; parentId?: CategoryGroupEntity['id'] }
   | { type: 'new-category' }
-  | { type: 'expense-group'; value: CategoryGroupEntity; depth: number }
+  | {
+      type: 'expense-group';
+      value: CategoryGroupEntity;
+      depth: number;
+      visibleDescendantRows: number;
+    }
   | {
       type: 'expense-category';
       value: CategoryEntity;
@@ -100,6 +105,25 @@ export const BudgetCategories = memo<BudgetCategoriesProps>(
     const items: BudgetItem[] = useMemo(() => {
       const [expenseGroups, incomeGroup] = separateGroups(categoryGroups);
 
+      // How many rows currently render below a group's own header - its
+      // visible categories, plus its visible subgroups' headers and
+      // (recursively) everything below them. Used to size the
+      // drag-and-drop highlight box so it covers a group's whole visible
+      // subtree, not just its direct categories.
+      function countVisibleDescendantRows(group: CategoryGroupNode): number {
+        if (collapsedGroupIds.includes(group.id)) {
+          return 0;
+        }
+        const categoryCount = (group.categories ?? []).filter(
+          cat => showHiddenCategories || !cat.hidden,
+        ).length;
+        const subgroupRows = (group.subgroups ?? []).reduce(
+          (sum, child) => sum + 1 + countVisibleDescendantRows(child),
+          0,
+        );
+        return categoryCount + subgroupRows;
+      }
+
       function flattenExpenseGroup(
         group: CategoryGroupNode,
         depth: number,
@@ -113,7 +137,12 @@ export const BudgetCategories = memo<BudgetCategoriesProps>(
         );
 
         const groupItems: BudgetItem[] = [
-          { type: 'expense-group', value: { ...group }, depth },
+          {
+            type: 'expense-group',
+            value: { ...group },
+            depth,
+            visibleDescendantRows: countVisibleDescendantRows(group),
+          },
         ];
 
         if (newCategoryForGroup === group.id) {
@@ -364,6 +393,7 @@ export const BudgetCategories = memo<BudgetCategoriesProps>(
                 <ExpenseGroup
                   group={item.value}
                   depth={item.depth}
+                  visibleDescendantRows={item.visibleDescendantRows}
                   editingCell={editingCell}
                   collapsed={collapsedGroupIds.includes(item.value.id)}
                   dragState={dragState}

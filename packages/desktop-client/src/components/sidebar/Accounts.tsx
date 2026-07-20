@@ -7,6 +7,7 @@ import type { AccountEntity } from '@actual-app/core/types/models';
 
 import { useMoveAccountMutation } from '#accounts';
 import { isAccountFailedSync } from '#accounts/syncStatus';
+import type { DropPosition } from '#components/sort';
 import { useAccounts } from '#hooks/useAccounts';
 import { useClosedAccounts } from '#hooks/useClosedAccounts';
 import { useLocalPref } from '#hooks/useLocalPref';
@@ -55,7 +56,7 @@ export function Accounts() {
 
   async function onReorder(
     id: string,
-    dropPos: 'top' | 'bottom' | null,
+    dropPos: DropPosition | null,
     targetId: string,
   ) {
     let targetIdToMove: string | null = targetId;

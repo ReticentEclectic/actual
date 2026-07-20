@@ -134,6 +134,73 @@ export function getOutdentTarget(
   };
 }
 
+function isSelfOrDescendant(
+  categoryGroups: CategoryGroupEntity[],
+  candidateId: CategoryGroupEntity['id'],
+  ancestorId: CategoryGroupEntity['id'],
+): boolean {
+  let current: CategoryGroupEntity['id'] | null | undefined = candidateId;
+  while (current) {
+    if (current === ancestorId) {
+      return true;
+    }
+    current = categoryGroups.find(g => g.id === current)?.parent_group_id;
+  }
+  return false;
+}
+
+// Resolves a group drag-and-drop into a concrete new parent + position,
+// or null if the drop isn't valid (would create a cycle, or cross an
+// income/expense type boundary - same rule enforced server-side in
+// budget/app.ts's moveCategoryGroup). Handles all three drop zones:
+// - 'on' the target's row: nest as the target's last child
+// - 'top'/'bottom' near the target: become the target's sibling,
+//   adopting the target's own parent - this is what makes dragging
+//   across parents work, not just reordering within one
+export function getGroupDropTarget(
+  categoryGroups: CategoryGroupEntity[],
+  draggedId: CategoryGroupEntity['id'],
+  dropPos: DropPosition,
+  targetId: CategoryGroupEntity['id'],
+): GroupReparentTarget | null {
+  const dragged = categoryGroups.find(g => g.id === draggedId);
+  const target = categoryGroups.find(g => g.id === targetId);
+  if (!dragged || !target || dragged.id === target.id) {
+    return null;
+  }
+  if (dragged.is_income !== target.is_income) {
+    return null;
+  }
+  // Dropping onto (or next to) a group that's actually a descendant of
+  // the dragged group would make the dragged group its own descendant.
+  if (isSelfOrDescendant(categoryGroups, target.id, dragged.id)) {
+    return null;
+  }
+
+  if (dropPos === 'on') {
+    return { parentGroupId: target.id, targetId: null };
+  }
+
+  const parentGroupId = target.parent_group_id ?? null;
+
+  // Top-level income is a special case - see getOutdentTarget above.
+  if (parentGroupId === null && dragged.is_income && dragged.id !== target.id) {
+    return null;
+  }
+
+  const siblings = siblingsOf(categoryGroups, parentGroupId).filter(
+    g => g.id !== dragged.id,
+  );
+
+  if (dropPos === 'top') {
+    return { parentGroupId, targetId: target.id };
+  }
+
+  const index = siblings.findIndex(g => g.id === target.id);
+  const next = siblings[index + 1];
+  return { parentGroupId, targetId: next ? next.id : null };
+}
+
 // How far, in pixels, each level of category-group nesting shifts a row.
 // Used by SidebarGroup and SidebarCategory to indent nested rows.
 export const SUBGROUP_INDENT_WIDTH = 14;

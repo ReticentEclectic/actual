@@ -24,8 +24,8 @@ import type { MonthBounds } from './MonthsContext';
 import {
   findSortDown,
   findSortUp,
+  getGroupDropTarget,
   getScrollbarWidth,
-  separateGroups,
 } from './util';
 
 type BudgetTableProps = {
@@ -53,6 +53,7 @@ type BudgetTableProps = {
   onReorderGroup: (params: {
     id: CategoryGroupEntity['id'];
     targetId: CategoryEntity['id'] | null;
+    parentGroupId?: CategoryGroupEntity['id'] | null;
   }) => void;
   onIndentGroup: (id: CategoryGroupEntity['id']) => void;
   onOutdentGroup: (id: CategoryGroupEntity['id']) => void;
@@ -160,11 +161,13 @@ export function BudgetTable(props: BudgetTableProps) {
     dropPos: DropPosition | null,
     targetId: string,
   ) => {
-    const [expenseGroups] = separateGroups(categoryGroups); // exclude Income group from sortable groups to fix off-by-one error
-    onReorderGroup({
-      id,
-      ...findSortDown(expenseGroups, dropPos, targetId),
-    });
+    if (!dropPos) {
+      return;
+    }
+    const target = getGroupDropTarget(categoryGroups, id, dropPos, targetId);
+    if (target) {
+      onReorderGroup({ id, ...target });
+    }
   };
 
   const moveVertically = (dir: 1 | -1) => {

@@ -26,6 +26,7 @@ import { useBudgetComponents } from '.';
 type ExpenseGroupProps = {
   group: ComponentProps<typeof SidebarGroup>['group'];
   depth: number;
+  visibleDescendantRows: number;
   collapsed: boolean;
   editingCell: { id: string; cell: string } | null;
   dragState: DragState<CategoryEntity> | DragState<CategoryGroupEntity> | null;
@@ -51,6 +52,7 @@ type ExpenseGroupProps = {
 export function ExpenseGroup({
   group,
   depth,
+  visibleDescendantRows,
   collapsed,
   editingCell,
   dragState,
@@ -82,6 +84,7 @@ export function ExpenseGroup({
     types: 'group',
     id: group.id,
     onDrop: onReorderGroup,
+    allowNestDrop: true,
   });
 
   const { dropRef: catDropRef, dropPos: catDropPos } = useDroppable({
@@ -115,7 +118,7 @@ export function ExpenseGroup({
             right: 0,
             height: collapsed
               ? ROW_HEIGHT - 1
-              : (1 + group.categories.length) * (ROW_HEIGHT - 1) + 1,
+              : (1 + visibleDescendantRows) * (ROW_HEIGHT - 1) + 1,
             zIndex: 10000,
           }}
         >
