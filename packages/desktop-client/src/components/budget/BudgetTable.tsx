@@ -23,7 +23,6 @@ import { MonthsProvider } from './MonthsContext';
 import type { MonthBounds } from './MonthsContext';
 import {
   findSortDown,
-  findSortUp,
   getGroupDropTarget,
   getScrollbarWidth,
 } from './util';
@@ -120,40 +119,47 @@ export function BudgetTable(props: BudgetTableProps) {
     dropPos: DropPosition | null,
     targetId: string,
   ) => {
+    const draggedCategory = categoryGroups
+      .flatMap(g => g.categories ?? [])
+      .find(cat => cat.id === id);
+    if (!draggedCategory) {
+      return;
+    }
+
     const isGroup = !!categoryGroups.find(g => g.id === targetId);
 
-    if (isGroup) {
-      const { targetId: groupId } = findSortUp(
-        categoryGroups,
-        dropPos,
-        targetId,
-      );
-      const group = categoryGroups.find(g => g.id === groupId);
+    let group: CategoryGroupEntity | undefined;
+    let shoveTargetId: CategoryEntity['id'] | null;
 
-      if (group) {
-        const { categories = [] } = group;
-        onReorderCategory({
-          id,
-          groupId: group.id,
-          targetId:
-            categories.length === 0 || dropPos === 'top'
-              ? null
-              : categories[0].id,
-        });
-      }
+    if (isGroup) {
+      // Dropped directly on a group's own header row - always means
+      // "put this category into this group", regardless of dropPos.
+      // There's no meaningful "before" or "after" a group for a
+      // category, since a category can't become a group's sibling.
+      // (This used to look at the category's position in the flat,
+      // non-hierarchical group list to guess a "previous group" - that
+      // only worked when every group was top-level, and broke for
+      // nested or empty groups.)
+      group = categoryGroups.find(g => g.id === targetId);
+      const categories = group?.categories ?? [];
+      shoveTargetId = categories.length === 0 ? null : categories[0].id;
     } else {
-      const group = categoryGroups.find(({ categories = [] }) =>
+      group = categoryGroups.find(({ categories = [] }) =>
         categories.some(cat => cat.id === targetId),
       );
-
-      if (group) {
-        onReorderCategory({
-          id,
-          groupId: group.id,
-          ...findSortDown(group.categories || [], dropPos, targetId),
-        });
-      }
+      shoveTargetId = group
+        ? findSortDown(group.categories || [], dropPos, targetId).targetId
+        : null;
     }
+
+    // A category can't move to a group of a different income/expense
+    // type - checked here so it's silently refused, same as an invalid
+    // group drop, rather than left to the server-side rejection alone.
+    if (!group || draggedCategory.is_income !== group.is_income) {
+      return;
+    }
+
+    onReorderCategory({ id, groupId: group.id, targetId: shoveTargetId });
   };
 
   const _onReorderGroup = (

@@ -39,7 +39,12 @@ type BudgetItem =
       depth: number;
     }
   | { type: 'income-separator' }
-  | { type: 'income-group'; value: CategoryGroupEntity; depth: number }
+  | {
+      type: 'income-group';
+      value: CategoryGroupEntity;
+      depth: number;
+      visibleDescendantRows: number;
+    }
   | { type: 'income-category'; value: CategoryEntity; depth: number };
 
 type LocalDragState =
@@ -183,7 +188,12 @@ export const BudgetCategories = memo<BudgetCategoriesProps>(
         depth: number,
       ): BudgetItem[] {
         const groupItems: BudgetItem[] = [
-          { type: 'income-group', value: group, depth },
+          {
+            type: 'income-group',
+            value: group,
+            depth,
+            visibleDescendantRows: countVisibleDescendantRows(group),
+          },
         ];
 
         if (newCategoryForGroup === group.id) {
@@ -457,8 +467,13 @@ export const BudgetCategories = memo<BudgetCategoriesProps>(
                 <IncomeGroup
                   group={item.value}
                   depth={item.depth}
+                  visibleDescendantRows={item.visibleDescendantRows}
                   editingCell={editingCell}
                   collapsed={collapsedGroupIds.includes(item.value.id)}
+                  dragState={dragState}
+                  onDragChange={onDragChange}
+                  onReorderGroup={onReorderGroup}
+                  onReorderCategory={onReorderCategory}
                   onEditName={onEditName!}
                   onSave={_onSaveGroup}
                   onSortCategories={onSortCategories}

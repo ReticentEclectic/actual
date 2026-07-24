@@ -361,6 +361,33 @@ async function moveCategory({
   targetId: CategoryEntity['id'] | null;
 }): Promise<void> {
   await batchMessages(async () => {
+    const [category, group] = await Promise.all([
+      db.first<Pick<db.DbCategory, 'is_income'>>(
+        'SELECT is_income FROM categories WHERE id = ?',
+        [id],
+      ),
+      db.first<Pick<db.DbCategoryGroup, 'is_income'>>(
+        'SELECT is_income FROM category_groups WHERE id = ? AND tombstone = 0',
+        [groupId],
+      ),
+    ]);
+
+    if (!category) {
+      throw APIError(`Moving a category: category ${id} not found`);
+    }
+    if (!group) {
+      throw APIError(`Moving a category: group ${groupId} not found`);
+    }
+    // A category can't move to a group of a different income/expense
+    // type. Checked here too, not just filtered out of the drag target
+    // client-side, since the client shouldn't be the only thing
+    // standing between this and corrupt data.
+    if (category.is_income !== group.is_income) {
+      throw APIError(
+        'Moving a category: cannot move a category to a group of a different income/expense type',
+      );
+    }
+
     await db.moveCategory(id, groupId, targetId);
   });
 }
