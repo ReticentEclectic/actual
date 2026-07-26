@@ -27,8 +27,8 @@ beforeEach(async () => {
   await loadMappings();
 });
 
-async function getMatchingTransactions(conds) {
-  const { filters } = conditionsToAQL(conds);
+async function getMatchingTransactions(conds, options = {}) {
+  const { filters } = conditionsToAQL(conds, options);
   const { data } = await aqlQuery(
     q('transactions').filter({ $and: filters }).select('*'),
   );
@@ -404,12 +404,41 @@ describe('Transaction rules', () => {
     });
   });
 
-  test('category_group condition matches categories in that group (live)', async () => {
+  test('category_group condition matches categories directly in that group (live)', async () => {
     await loadRules();
     const billsGroupId = await db.insertCategoryGroup({ name: 'Bills' });
     const electricId = await db.insertCategory({
       name: 'Electric',
       cat_group: billsGroupId,
+    });
+
+    await insertRule({
+      stage: null,
+      conditionsOp: 'and',
+      conditions: [{ op: 'is', field: 'category_group', value: billsGroupId }],
+      actions: [{ op: 'set', field: 'notes', value: 'bills-matched' }],
+    });
+
+    const transaction = await runRules({
+      date: '2020-01-01',
+      category: electricId,
+      notes: '',
+    });
+
+    expect(transaction.notes).toBe('bills-matched');
+    expect(transaction).not.toHaveProperty('category_group');
+  });
+
+  test('category_group condition also matches a nested subgroup (live)', async () => {
+    await loadRules();
+    const billsGroupId = await db.insertCategoryGroup({ name: 'Bills' });
+    const utilitiesGroupId = await db.insertCategoryGroup({
+      name: 'Utilities',
+      parent_group_id: billsGroupId,
+    });
+    const electricId = await db.insertCategory({
+      name: 'Electric',
+      cat_group: utilitiesGroupId,
     });
 
     await insertRule({
@@ -455,17 +484,21 @@ describe('Transaction rules', () => {
     expect(transaction).not.toHaveProperty('category_group');
   });
 
-  test('category_group condition observes a category set earlier in the same rule chain (live)', async () => {
+  test('category_group condition observes a category set earlier in the same rule chain, including nested subgroups (live)', async () => {
     await loadRules();
     const billsGroupId = await db.insertCategoryGroup({ name: 'Bills' });
+    const utilitiesGroupId = await db.insertCategoryGroup({
+      name: 'Utilities',
+      parent_group_id: billsGroupId,
+    });
     const electricId = await db.insertCategory({
       name: 'Electric',
-      cat_group: billsGroupId,
+      cat_group: utilitiesGroupId,
     });
     await db.insertPayee({ id: 'power_co_id', name: 'Power Co' });
 
-    // Runs first (pre stage): sets category based on payee. Nothing
-    // about category_group is checked here.
+    // Runs first (pre stage): sets category to Electric, which sits in
+    // Utilities, nested under Bills — not directly in Bills.
     await insertRule({
       stage: 'pre',
       conditionsOp: 'and',
@@ -473,13 +506,17 @@ describe('Transaction rules', () => {
       actions: [{ op: 'set', field: 'category', value: electricId }],
     });
 
-    // Runs after (post stage): checks category_group. This should see
-    // the category the *first* rule just set, not whatever the
-    // transaction started with.
+    // Runs after (post stage): checks category_group is Bills. This
+    // should match — both because it should see the category the
+    // *first* rule just set (not whatever the transaction started
+    // with), and because Electric's ancestor chain includes Bills even
+    // though its immediate group is Utilities.
     await insertRule({
       stage: 'post',
       conditionsOp: 'and',
-      conditions: [{ op: 'is', field: 'category_group', value: billsGroupId }],
+      conditions: [
+        { op: 'is', field: 'category_group', value: billsGroupId },
+      ],
       actions: [{ op: 'set', field: 'notes', value: 'bills-matched' }],
     });
 
@@ -492,6 +529,78 @@ describe('Transaction rules', () => {
 
     expect(transaction.category).toBe(electricId);
     expect(transaction.notes).toBe('bills-matched');
+    expect(transaction).not.toHaveProperty('category_group');
+  });
+
+  test('category_group condition matches nested subgroups when categoryGroups is provided (query)', async () => {
+    await loadRules();
+    const account = await db.insertAccount({ name: 'bank' });
+    const billsGroupId = await db.insertCategoryGroup({ name: 'Bills' });
+    const utilitiesGroupId = await db.insertCategoryGroup({
+      name: 'Utilities',
+      parent_group_id: billsGroupId,
+    });
+    const electricId = await db.insertCategory({
+      name: 'Electric',
+      cat_group: utilitiesGroupId,
+    });
+    const funGroupId = await db.insertCategoryGroup({ name: 'Fun' });
+    const moviesId = await db.insertCategory({
+      name: 'Movies',
+      cat_group: funGroupId,
+    });
+
+    await db.insertTransaction({
+      id: 'elec1',
+      date: '2020-10-01',
+      account,
+      category: electricId,
+      amount: -100,
+    });
+    await db.insertTransaction({
+      id: 'movie1',
+      date: '2020-10-01',
+      account,
+      category: moviesId,
+      amount: -50,
+    });
+
+    const categoryGroups = await db.getCategoriesGrouped();
+
+    const transactions = await getMatchingTransactions(
+      [{ field: 'category_group', op: 'is', value: billsGroupId }],
+      { categoryGroups },
+    );
+
+    expect(transactions.map(t => t.id)).toEqual(['elec1']);
+  });
+
+  test('category_group condition stays immediate-group-only when categoryGroups is omitted (query, backward compatible)', async () => {
+    await loadRules();
+    const account = await db.insertAccount({ name: 'bank' });
+    const billsGroupId = await db.insertCategoryGroup({ name: 'Bills' });
+    const utilitiesGroupId = await db.insertCategoryGroup({
+      name: 'Utilities',
+      parent_group_id: billsGroupId,
+    });
+    const electricId = await db.insertCategory({
+      name: 'Electric',
+      cat_group: utilitiesGroupId,
+    });
+
+    await db.insertTransaction({
+      id: 'elec1',
+      date: '2020-10-01',
+      account,
+      category: electricId,
+      amount: -100,
+    });
+
+    const transactions = await getMatchingTransactions([
+      { field: 'category_group', op: 'is', value: billsGroupId },
+    ]);
+
+    expect(transactions.map(t => t.id)).toEqual([]);
   });
 
   test('transactions can be queried by rule', async () => {

@@ -826,6 +826,7 @@ export async function matchTransactions(
   // The first pass runs the rules, and preps data for fuzzy matching
   const accounts: db.DbAccount[] = await db.getAccounts();
   const accountsMap = new Map(accounts.map(account => [account.id, account]));
+  const categoryGroups = await db.getCategoriesGrouped();
 
   const transactionsStep1 = [];
   for (const {
@@ -834,7 +835,7 @@ export async function matchTransactions(
     subtransactions,
   } of normalized) {
     // Run the rules
-    const trans = await runRules(originalTrans, accountsMap);
+    const trans = await runRules(originalTrans, accountsMap, categoryGroups);
 
     let match = null;
     let fuzzyDataset = null;
@@ -1012,10 +1013,11 @@ export async function addTransactions(
 
   const accounts: db.DbAccount[] = await db.getAccounts();
   const accountsMap = new Map(accounts.map(account => [account.id, account]));
+  const categoryGroups = await db.getCategoriesGrouped();
 
   for (const { trans: originalTrans, subtransactions } of normalized) {
     // Run the rules
-    const trans = await runRules(originalTrans, accountsMap);
+    const trans = await runRules(originalTrans, accountsMap, categoryGroups);
 
     const finalTransaction = {
       id: uuidv4(),

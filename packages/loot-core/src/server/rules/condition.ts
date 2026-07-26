@@ -248,6 +248,27 @@ export class Condition {
       return false;
     }
 
+    // `category_group` is populated (see prepareTransactionForRules) as
+    // the category's full ancestor chain of group ids — its own
+    // immediate group first, then parent, grandparent, etc, up to the
+    // root. Matching against the chain means a condition on an ancestor
+    // group also matches categories nested underneath it, at any depth.
+    if (this.field === 'category_group') {
+      const chain = Array.isArray(fieldValue) ? fieldValue : [fieldValue];
+      switch (this.op) {
+        case 'is':
+          return chain.includes(this.value);
+        case 'isNot':
+          return !chain.includes(this.value);
+        case 'oneOf':
+          return this.value.some(v => chain.includes(v));
+        case 'notOneOf':
+          return !this.value.some(v => chain.includes(v));
+        default:
+          break;
+      }
+    }
+
     if (typeof fieldValue === 'string') {
       fieldValue = fieldValue.toLowerCase();
     }

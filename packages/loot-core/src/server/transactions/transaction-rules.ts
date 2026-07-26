@@ -30,6 +30,7 @@ import {
   resolveAccountIdForBalanceOf,
 } from '#server/rules/balanceOfFormula';
 import { addSyncListener, batchMessages } from '#server/sync';
+import { getAncestorGroupIds, getDescendantGroupIds } from '#shared/categories';
 import {
   addDays,
   currentDay,
@@ -321,6 +322,7 @@ export async function getAllRuleIdsFromSchedules(
 export async function runRules(
   trans,
   accounts: Map<string, db.DbAccount> | null = null,
+  categoryGroups: db.DbCategoryGroup[] | null = null,
 ) {
   await ensureFormulaPreferencesLoaded();
 
@@ -333,7 +335,14 @@ export async function runRules(
     accountsMap = accounts;
   }
 
-  let finalTrans = await prepareTransactionForRules({ ...trans }, accountsMap);
+  const resolvedCategoryGroups =
+    categoryGroups ?? (await db.getCategoriesGrouped());
+
+  let finalTrans = await prepareTransactionForRules(
+    { ...trans },
+    accountsMap,
+    resolvedCategoryGroups,
+  );
   let lastCategoryIdForGroup: string | null = finalTrans.category ?? null;
 
   let scheduleRuleID = '';
@@ -375,6 +384,7 @@ export async function runRules(
         lastCategoryIdForGroup = await refreshCategoryGroupIfChanged(
           finalTrans,
           lastCategoryIdForGroup,
+          resolvedCategoryGroups,
         );
       } else if (RuleIdsLinkedToSchedules.includes(rules[i].id)) {
         // skip all other rules that are linked to other schedules.
@@ -386,6 +396,7 @@ export async function runRules(
         lastCategoryIdForGroup = await refreshCategoryGroupIfChanged(
           finalTrans,
           lastCategoryIdForGroup,
+          resolvedCategoryGroups,
         );
       }
     } else {
@@ -395,6 +406,7 @@ export async function runRules(
       lastCategoryIdForGroup = await refreshCategoryGroupIfChanged(
         finalTrans,
         lastCategoryIdForGroup,
+        resolvedCategoryGroups,
       );
     }
   }
@@ -434,10 +446,68 @@ function conditionSpecialCases(cond: Condition | null): Condition | null {
   return cond;
 }
 
+// If a `category_group` condition's target group has descendants,
+// rewrite it to an equivalent oneOf/notOneOf over that group plus all
+// of its descendants, so the existing oneOf/notOneOf AQL handling
+// (which already builds an $or/$and over multiple ids) picks it up
+// for free. No-op when `categoryGroups` isn't supplied, so callers
+// that don't pass it keep today's immediate-group-only behavior.
+function expandCategoryGroupCondition(
+  cond: Condition | null,
+  categoryGroups: Array<{ id: string; parent_group_id?: string | null }>,
+): Condition | null {
+  if (!cond || cond.field !== 'category_group' || categoryGroups.length === 0) {
+    return cond;
+  }
+
+  const expand = (id: string) => getDescendantGroupIds(id, categoryGroups);
+
+  switch (cond.op) {
+    case 'is':
+      return new Condition(
+        'oneOf',
+        'category_group',
+        expand(cond.value),
+        cond.options,
+      );
+    case 'isNot':
+      return new Condition(
+        'notOneOf',
+        'category_group',
+        expand(cond.value),
+        cond.options,
+      );
+    case 'oneOf':
+      return new Condition(
+        'oneOf',
+        'category_group',
+        [...new Set(cond.value.flatMap(expand))],
+        cond.options,
+      );
+    case 'notOneOf':
+      return new Condition(
+        'notOneOf',
+        'category_group',
+        [...new Set(cond.value.flatMap(expand))],
+        cond.options,
+      );
+    default:
+      return cond;
+  }
+}
+
 // This does the inverse: finds all the transactions matching a rule
 export function conditionsToAQL(
   conditions,
-  { recurDateBounds = 100, applySpecialCases = true } = {},
+  {
+    recurDateBounds = 100,
+    applySpecialCases = true,
+    categoryGroups = [],
+  }: {
+    recurDateBounds?: number;
+    applySpecialCases?: boolean;
+    categoryGroups?: Array<{ id: string; parent_group_id?: string | null }>;
+  } = {},
 ) {
   const errors = [];
 
@@ -456,6 +526,7 @@ export function conditionsToAQL(
       }
     })
     .map(cond => (applySpecialCases ? conditionSpecialCases(cond) : cond))
+    .map(cond => expandCategoryGroupCondition(cond, categoryGroups))
     .filter(Boolean);
 
   // rule -> actualql
@@ -1002,8 +1073,8 @@ export type TransactionForRules = TransactionEntity & {
   balance?: number;
   _category_name?: string;
   _account_name?: string;
-  /** The transaction's category's group id; see prepareTransactionForRules */
-  category_group?: string;
+  /** Ancestor chain of category-group ids (own group first, up to root); see prepareTransactionForRules */
+  category_group?: string[];
   parent_amount?: number;
   /** Prefetched cent balances for BALANCE_OF("…") in rule formulas; cleared in finalize */
   _balanceOfPrefetched?: Map<string, number>;
@@ -1083,6 +1154,7 @@ export async function prefetchBalanceOfForTransaction(
 export async function prepareTransactionForRules(
   trans: TransactionEntity,
   accounts: Map<string, db.DbAccount> | null = null,
+  categoryGroups: db.DbCategoryGroup[] | null = null,
 ): Promise<TransactionForRules> {
   const r: TransactionForRules = { ...trans };
   if (trans.payee) {
@@ -1111,15 +1183,14 @@ export async function prepareTransactionForRules(
     if (category) {
       r._category_name = category.name;
 
-      // Populate the group id so a `category_group` rule condition can
-      // actually match. Previously this was never set here, so
-      // Condition.eval()'s `object['category_group']` lookup always
-      // came back undefined and the condition silently never matched
-      // during live rule application (import/manual entry). The
-      // query/report path (conditionsToAQL) was unaffected, since it
-      // maps the field to a real join (`category.group`) instead of
-      // reading this property.
-      r.category_group = category.cat_group;
+      // Populate the ancestor chain of group ids so a `category_group`
+      // rule condition can match categories nested under that group at
+      // any depth, not just categories directly in it. Reuse a
+      // pre-fetched list when the caller is processing a batch (bank
+      // sync, import) to avoid re-querying every group for every
+      // transaction.
+      const groups = categoryGroups ?? (await db.getCategoriesGrouped());
+      r.category_group = getAncestorGroupIds(category.cat_group, groups);
     }
   }
 
@@ -1146,18 +1217,20 @@ async function resolvePayeeNameForRules(
 }
 
 /**
- * `category_group` is only computed once, in prepareTransactionForRules,
- * before any rules have run. Since rules apply as a chain and an earlier
- * rule's action can change (or clear) `category`, a later rule's
- * `category_group` condition would otherwise read a stale group id left
- * over from before that change. Called after every rule application in
- * the runRules loop; only re-resolves the group when `category` has
- * actually changed since the last check, to avoid a database lookup on
- * every rule when category was untouched.
+ * `category_group` (the category's ancestor chain) is only computed
+ * once, in prepareTransactionForRules, before any rules have run.
+ * Since rules apply as a chain and an earlier rule's action can
+ * change (or clear) `category`, a later rule's `category_group`
+ * condition would otherwise read a stale chain left over from before
+ * that change. Called after every rule application in the runRules
+ * loop; only recomputes the chain when `category` has actually
+ * changed since the last check, to avoid a database lookup on every
+ * rule when category was untouched.
  */
 async function refreshCategoryGroupIfChanged(
   trans: TransactionForRules,
   lastCategoryId: string | null,
+  categoryGroups: db.DbCategoryGroup[],
 ): Promise<string | null> {
   const currentCategoryId = trans.category ?? null;
   if (currentCategoryId === lastCategoryId) {
@@ -1166,7 +1239,10 @@ async function refreshCategoryGroupIfChanged(
 
   if (currentCategoryId) {
     const category = await getCategory(currentCategoryId);
-    trans.category_group = category?.cat_group;
+    trans.category_group = getAncestorGroupIds(
+      category?.cat_group,
+      categoryGroups,
+    );
   } else {
     delete trans.category_group;
   }

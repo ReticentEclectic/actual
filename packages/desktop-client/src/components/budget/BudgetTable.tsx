@@ -21,11 +21,7 @@ import { BudgetSummaries } from './BudgetSummaries';
 import { BudgetTotals } from './BudgetTotals';
 import { MonthsProvider } from './MonthsContext';
 import type { MonthBounds } from './MonthsContext';
-import {
-  findSortDown,
-  getGroupDropTarget,
-  getScrollbarWidth,
-} from './util';
+import { findSortDown, getGroupDropTarget, getScrollbarWidth } from './util';
 
 type BudgetTableProps = {
   type: string;

@@ -269,9 +269,7 @@ export function handleCategoryGroupChange(months, oldValue, newValue) {
       .addDependencies(sheetName, budgetedTarget, [`group-budget-${groupId}`]);
     sheet
       .get()
-      .addDependencies(sheetName, spentTarget, [
-        `group-sum-amount-${groupId}`,
-      ]);
+      .addDependencies(sheetName, spentTarget, [`group-sum-amount-${groupId}`]);
     sheet
       .get()
       .addDependencies(sheetName, leftoverTarget, [
