@@ -22,6 +22,17 @@ type recalculateProps = {
   showUncategorized?: boolean;
   startDate: string;
   endDate: string;
+  /**
+   * For groupByLabel: 'categoryGroup' rollups only — the full set of
+   * group ids that should count toward this item's total: its own id
+   * plus every descendant subgroup's id, at any depth (see
+   * getDescendantGroupIds). A row is included if its categoryGroup is
+   * anywhere in this set, not just an exact match on item.id, so a
+   * parent group's total correctly includes categories nested inside
+   * its subgroups. Omit for groupings that don't nest (category,
+   * payee, account), which keep today's exact-match behavior.
+   */
+  matchingGroupIds?: string[];
 };
 
 export function recalculate({
@@ -35,6 +46,7 @@ export function recalculate({
   showUncategorized,
   startDate,
   endDate,
+  matchingGroupIds,
 }: recalculateProps): GroupedEntity {
   let totalAssets = 0;
   let totalDebts = 0;
@@ -44,6 +56,10 @@ export function recalculate({
 
       const groupsByCategory =
         groupByLabel === 'category' || groupByLabel === 'categoryGroup';
+      const matchesItem = (row: QueryDataEntity) =>
+        matchingGroupIds
+          ? matchingGroupIds.includes(row[groupByLabel] as string)
+          : row[groupByLabel] === (item.id ?? null);
       const intervalAssets = filterHiddenItems(
         item,
         assets,
@@ -55,8 +71,7 @@ export function recalculate({
         .filter(
           asset =>
             asset.date === intervalItem &&
-            (asset[groupByLabel] === (item.id ?? null) ||
-              (item.uncategorized_id && groupsByCategory)),
+            (matchesItem(asset) || (item.uncategorized_id && groupsByCategory)),
         )
         .reduce((a, v) => a + v.amount, 0);
       totalAssets += intervalAssets;
@@ -72,8 +87,7 @@ export function recalculate({
         .filter(
           debt =>
             debt.date === intervalItem &&
-            (debt[groupByLabel] === (item.id ?? null) ||
-              (item.uncategorized_id && groupsByCategory)),
+            (matchesItem(debt) || (item.uncategorized_id && groupsByCategory)),
         )
         .reduce((a, v) => a + v.amount, 0);
       totalDebts += intervalDebts;

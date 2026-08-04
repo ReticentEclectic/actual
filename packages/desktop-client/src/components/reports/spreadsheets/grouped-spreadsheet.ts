@@ -1,4 +1,5 @@
 import { send } from '@actual-app/core/platform/client/connection';
+import { getDescendantGroupIds } from '@actual-app/core/shared/categories';
 import * as monthUtils from '@actual-app/core/shared/months';
 import type { GroupedEntity } from '@actual-app/core/types/models';
 
@@ -104,6 +105,7 @@ export function createGroupedSpreadsheet({
           showUncategorized,
           startDate,
           endDate,
+          matchingGroupIds: getDescendantGroupIds(group.id, categories.grouped),
         });
 
         const stackedCategories =
