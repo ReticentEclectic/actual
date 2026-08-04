@@ -11,11 +11,14 @@ import {
 } from '@actual-app/components/icons/v2';
 import { Text } from '@actual-app/components/text';
 import { View } from '@actual-app/components/view';
+import { groupCategoryGroupsIntoTree } from '@actual-app/core/shared/categories';
+import type { CategoryGroupNode } from '@actual-app/core/shared/categories';
 import type {
   CategoryEntity,
   CategoryGroupEntity,
 } from '@actual-app/core/types/models';
 
+import { SUBGROUP_INDENT_WIDTH } from '#components/budget/util';
 import { Checkbox } from '#components/forms';
 
 import { GraphButton } from './GraphButton';
@@ -40,6 +43,20 @@ export function CategorySelector({
       return showHiddenCategories || !f.hidden ? true : false;
     });
   };
+
+  // A group's own direct categories, plus every descendant subgroup's
+  // own categories, at any depth. Used for checkbox state/selection so
+  // toggling a parent group's checkbox covers everything nested under
+  // it, not just categories directly in that group.
+  const subtreeCategories = (group: CategoryGroupNode): CategoryEntity[] => [
+    ...filteredGroup(group),
+    ...(group.subgroups ?? []).flatMap(subtreeCategories),
+  ];
+
+  const tree = useMemo(
+    () => groupCategoryGroupsIntoTree(categoryGroups ?? []),
+    [categoryGroups],
+  );
 
   const selectAll: CategoryEntity[] = [];
   categoryGroups.map(categoryGroup =>
@@ -151,120 +168,126 @@ export function CategorySelector({
           overflowY: 'auto',
         }}
       >
-        {categoryGroups &&
-          categoryGroups.map(categoryGroup => {
-            const allCategoriesInGroupSelected = filteredGroup(
-              categoryGroup,
-            ).every(category =>
-              selectedCategories.some(
+        {tree.map(group => renderGroupNode(group, 0))}
+      </ul>
+    </View>
+  );
+
+  function renderGroupNode(group: CategoryGroupNode, depth: number) {
+    const groupSubtreeCategories = subtreeCategories(group);
+    const allCategoriesInGroupSelected = groupSubtreeCategories.every(
+      category =>
+        selectedCategories.some(
+          selectedCategory => selectedCategory.id === category.id,
+        ),
+    );
+    const noCategorySelected = groupSubtreeCategories.every(
+      category =>
+        !selectedCategories.some(
+          selectedCategory => selectedCategory.id === category.id,
+        ),
+    );
+    return (
+      <Fragment key={group.id}>
+        <li
+          style={{
+            display:
+              noCategorySelected && uncheckedHidden ? 'none' : 'flex',
+            marginBottom: 8,
+            flexDirection: 'row',
+            paddingLeft: depth * SUBGROUP_INDENT_WIDTH,
+          }}
+        >
+          <Checkbox
+            id={`form_${group.id}`}
+            checked={allCategoriesInGroupSelected}
+            onChange={() => {
+              const selectedCategoriesExcludingGroupCategories =
+                selectedCategories.filter(
+                  selectedCategory =>
+                    !groupSubtreeCategories.some(
+                      groupCategory =>
+                        groupCategory.id === selectedCategory.id,
+                    ),
+                );
+              if (allCategoriesInGroupSelected) {
+                setSelectedCategories(
+                  selectedCategoriesExcludingGroupCategories,
+                );
+              } else {
+                setSelectedCategories(
+                  selectedCategoriesExcludingGroupCategories.concat(
+                    groupSubtreeCategories,
+                  ),
+                );
+              }
+            }}
+          />
+          <label
+            htmlFor={`form_${group.id}`}
+            style={{ userSelect: 'none', fontWeight: 'bold' }}
+          >
+            {group.name}
+          </label>
+        </li>
+        <li>
+          <ul
+            style={{
+              listStyle: 'none',
+              marginLeft: 0,
+              marginBottom: 10,
+              paddingLeft: 0,
+            }}
+          >
+            {filteredGroup(group).map(category => {
+              const isChecked = selectedCategories.some(
                 selectedCategory => selectedCategory.id === category.id,
-              ),
-            );
-            const noCategorySelected = filteredGroup(categoryGroup).every(
-              category =>
-                !selectedCategories.some(
-                  selectedCategory => selectedCategory.id === category.id,
-                ),
-            );
-            return (
-              <Fragment key={categoryGroup.id}>
+              );
+              return (
                 <li
+                  key={category.id}
                   style={{
                     display:
-                      noCategorySelected && uncheckedHidden ? 'none' : 'flex',
-                    marginBottom: 8,
+                      !isChecked && uncheckedHidden ? 'none' : 'flex',
                     flexDirection: 'row',
+                    marginBottom: 4,
+                    paddingLeft: (depth + 1) * SUBGROUP_INDENT_WIDTH,
                   }}
                 >
                   <Checkbox
-                    id={`form_${categoryGroup.id}`}
-                    checked={allCategoriesInGroupSelected}
+                    id={`form_${category.id}`}
+                    checked={isChecked}
                     onChange={() => {
-                      const selectedCategoriesExcludingGroupCategories =
-                        selectedCategories.filter(
-                          selectedCategory =>
-                            !filteredGroup(categoryGroup).some(
-                              groupCategory =>
-                                groupCategory.id === selectedCategory.id,
-                            ),
-                        );
-                      if (allCategoriesInGroupSelected) {
+                      if (isChecked) {
                         setSelectedCategories(
-                          selectedCategoriesExcludingGroupCategories,
-                        );
-                      } else {
-                        setSelectedCategories(
-                          selectedCategoriesExcludingGroupCategories.concat(
-                            filteredGroup(categoryGroup),
+                          selectedCategories.filter(
+                            selectedCategory =>
+                              selectedCategory.id !== category.id,
                           ),
                         );
+                      } else {
+                        setSelectedCategories([
+                          ...selectedCategories,
+                          category,
+                        ]);
                       }
                     }}
                   />
                   <label
-                    htmlFor={`form_${categoryGroup.id}`}
-                    style={{ userSelect: 'none', fontWeight: 'bold' }}
+                    htmlFor={`form_${category.id}`}
+                    style={{ userSelect: 'none' }}
                   >
-                    {categoryGroup.name}
+                    {category.name}
                   </label>
                 </li>
-                <li>
-                  <ul
-                    style={{
-                      listStyle: 'none',
-                      marginLeft: 0,
-                      marginBottom: 10,
-                      paddingLeft: 10,
-                    }}
-                  >
-                    {filteredGroup(categoryGroup).map(category => {
-                      const isChecked = selectedCategories.some(
-                        selectedCategory => selectedCategory.id === category.id,
-                      );
-                      return (
-                        <li
-                          key={category.id}
-                          style={{
-                            display:
-                              !isChecked && uncheckedHidden ? 'none' : 'flex',
-                            flexDirection: 'row',
-                            marginBottom: 4,
-                          }}
-                        >
-                          <Checkbox
-                            id={`form_${category.id}`}
-                            checked={isChecked}
-                            onChange={() => {
-                              if (isChecked) {
-                                setSelectedCategories(
-                                  selectedCategories.filter(
-                                    selectedCategory =>
-                                      selectedCategory.id !== category.id,
-                                  ),
-                                );
-                              } else {
-                                setSelectedCategories([
-                                  ...selectedCategories,
-                                  category,
-                                ]);
-                              }
-                            }}
-                          />
-                          <label
-                            htmlFor={`form_${category.id}`}
-                            style={{ userSelect: 'none' }}
-                          >
-                            {category.name}
-                          </label>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </li>
-              </Fragment>
-            );
-          })}
-      </ul>
-    </View>
-  );
+              );
+            })}
+            {(group.subgroups ?? []).map(subgroup =>
+              renderGroupNode(subgroup, depth + 1),
+            )}
+          </ul>
+        </li>
+      </Fragment>
+    );
+  }
 }
