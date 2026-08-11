@@ -191,8 +191,7 @@ export function CategorySelector({
       <Fragment key={group.id}>
         <li
           style={{
-            display:
-              noCategorySelected && uncheckedHidden ? 'none' : 'flex',
+            display: noCategorySelected && uncheckedHidden ? 'none' : 'flex',
             marginBottom: 8,
             flexDirection: 'row',
             paddingLeft: depth * SUBGROUP_INDENT_WIDTH,
@@ -206,8 +205,7 @@ export function CategorySelector({
                 selectedCategories.filter(
                   selectedCategory =>
                     !groupSubtreeCategories.some(
-                      groupCategory =>
-                        groupCategory.id === selectedCategory.id,
+                      groupCategory => groupCategory.id === selectedCategory.id,
                     ),
                 );
               if (allCategoriesInGroupSelected) {
@@ -247,8 +245,7 @@ export function CategorySelector({
                 <li
                   key={category.id}
                   style={{
-                    display:
-                      !isChecked && uncheckedHidden ? 'none' : 'flex',
+                    display: !isChecked && uncheckedHidden ? 'none' : 'flex',
                     flexDirection: 'row',
                     marginBottom: 4,
                     paddingLeft: (depth + 1) * SUBGROUP_INDENT_WIDTH,

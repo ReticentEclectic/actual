@@ -48,6 +48,7 @@ export type renderRowProps = {
   item: GroupedEntity;
   mode: string;
   style?: CSSProperties;
+  depth?: number;
 };
 
 export function ReportTable({
@@ -77,7 +78,7 @@ export function ReportTable({
     }
   });
 
-  const renderRow = ({ item, mode, style }: renderRowProps) => {
+  const renderRow = ({ item, mode, style, depth }: renderRowProps) => {
     return (
       <ReportTableRow
         item={item}
@@ -94,6 +95,7 @@ export function ReportTable({
         showHiddenCategories={showHiddenCategories}
         showOffBudget={showOffBudget}
         interval={interval}
+        depth={depth}
       />
     );
   };

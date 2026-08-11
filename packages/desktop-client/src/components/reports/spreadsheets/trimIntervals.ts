@@ -117,7 +117,25 @@ export function trimIntervalsToRange(
   });
 }
 
-// Trim nested category intervalData within each group
+function trimItemIntervalData(
+  item: GroupedEntity,
+  startIndex: number,
+  endIndex: number,
+): void {
+  if (
+    startIndex > endIndex ||
+    startIndex < 0 ||
+    endIndex >= item.intervalData.length
+  ) {
+    item.intervalData = [];
+  } else {
+    item.intervalData = item.intervalData.slice(startIndex, endIndex + 1);
+  }
+}
+
+// Trim nested category and subgroup intervalData within each group,
+// recursively — a subgroup is itself a GroupedEntity, so it can have
+// both its own categories and further nested subgroups.
 export function trimGroupedDataIntervals(
   groupedData: GroupedEntity[],
   startIndex: number,
@@ -125,32 +143,18 @@ export function trimGroupedDataIntervals(
 ): void {
   groupedData.forEach(group => {
     // Trim the group's own intervalData
-    if (
-      startIndex > endIndex ||
-      startIndex < 0 ||
-      endIndex >= group.intervalData.length
-    ) {
-      group.intervalData = [];
-    } else {
-      group.intervalData = group.intervalData.slice(startIndex, endIndex + 1);
-    }
+    trimItemIntervalData(group, startIndex, endIndex);
 
     // Trim the nested categories' intervalData
     if (group.categories) {
       group.categories.forEach(category => {
-        if (
-          startIndex > endIndex ||
-          startIndex < 0 ||
-          endIndex >= category.intervalData.length
-        ) {
-          category.intervalData = [];
-        } else {
-          category.intervalData = category.intervalData.slice(
-            startIndex,
-            endIndex + 1,
-          );
-        }
+        trimItemIntervalData(category, startIndex, endIndex);
       });
+    }
+
+    // Trim nested subgroups, recursively
+    if (group.subgroups) {
+      trimGroupedDataIntervals(group.subgroups, startIndex, endIndex);
     }
   });
 }

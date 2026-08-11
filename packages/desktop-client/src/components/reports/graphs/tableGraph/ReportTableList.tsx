@@ -7,7 +7,6 @@ import type { DataEntity, GroupedEntity } from '@actual-app/core/types/models';
 
 import { Row } from '#components/table';
 
-import { RenderTableRow } from './RenderTableRow';
 import type { renderRowProps } from './ReportTable';
 
 type ReportTableListProps = {
@@ -16,6 +15,12 @@ type ReportTableListProps = {
   groupBy: string;
   renderRow: (arg: renderRowProps) => ReactNode;
   style?: CSSProperties;
+};
+
+const groupHeaderStyle: CSSProperties = {
+  color: theme.tableRowHeaderText,
+  backgroundColor: theme.tableRowHeaderBackground,
+  fontWeight: 600,
 };
 
 export function ReportTableList({
@@ -46,52 +51,69 @@ export function ReportTableList({
           })
         : data.data;
 
+  // A row with either its own leaf categories or nested subgroups
+  // renders as a bold group header — a subgroup is still a group, so
+  // it gets the same treatment as a top-level one, just indented.
+  function isGroupRow(item: GroupedEntity): boolean {
+    return !!item.categories || !!item.subgroups;
+  }
+
+  // Renders one row plus everything nested under it (own categories,
+  // then nested subgroups, each recursed into the same way), at
+  // increasing depth/indentation. Recursion depth is bounded by actual
+  // category-group nesting depth, which is always shallow.
+  function renderGroupRow(
+    item: GroupedEntity,
+    depth: number,
+    key: string,
+  ): ReactNode {
+    return (
+      <View key={key}>
+        <View>
+          {renderRow({
+            item,
+            mode,
+            depth,
+            style: {
+              ...(isGroupRow(item) && groupHeaderStyle),
+              ...style,
+            },
+          })}
+        </View>
+        {item.categories && (
+          <View>
+            {item.categories.map((category, i) => (
+              <View key={category.id || `${key}-cat-${i}`}>
+                {renderRow({
+                  item: category,
+                  mode,
+                  depth: depth + 1,
+                  style,
+                })}
+              </View>
+            ))}
+          </View>
+        )}
+        {item.subgroups &&
+          item.subgroups.map((subgroup, i) =>
+            renderGroupRow(
+              subgroup,
+              depth + 1,
+              subgroup.id || `${key}-sub-${i}`,
+            ),
+          )}
+        {depth === 0 && <Row height={20} />}
+      </View>
+    );
+  }
+
   return (
     <View>
       {metadata ? (
         <View>
-          {metadata.map((item, index) => {
-            return (
-              <View key={index}>
-                <RenderTableRow
-                  index={index}
-                  renderRow={renderRow}
-                  mode={mode}
-                  metadata={metadata}
-                  style={{
-                    ...(item.categories && {
-                      color: theme.tableRowHeaderText,
-                      backgroundColor: theme.tableRowHeaderBackground,
-                      fontWeight: 600,
-                    }),
-                    ...style,
-                  }}
-                />
-                {item.categories && (
-                  <>
-                    <View>
-                      {item.categories.map(
-                        (category: GroupedEntity, i: number) => {
-                          return (
-                            <RenderTableRow
-                              key={category.id}
-                              index={i}
-                              renderRow={renderRow}
-                              mode={mode}
-                              metadata={metadata}
-                              parent_index={index}
-                              style={style}
-                            />
-                          );
-                        },
-                      )}
-                    </View>
-                    <Row height={20} />
-                  </>
-                )}
-              </View>
-            );
-          })}
+          {metadata.map((item, index) =>
+            renderGroupRow(item, 0, item.id || `${index}`),
+          )}
         </View>
       ) : (
         <View width="flex" />

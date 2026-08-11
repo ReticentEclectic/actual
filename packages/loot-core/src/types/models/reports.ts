@@ -124,6 +124,7 @@ export type GroupedEntity = {
   netDebts: number;
   totalBudgeted: number;
   categories?: GroupedEntity[];
+  subgroups?: GroupedEntity[];
 };
 
 export type Interval = {

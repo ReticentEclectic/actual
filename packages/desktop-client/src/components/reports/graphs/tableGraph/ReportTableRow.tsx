@@ -10,6 +10,7 @@ import type {
   RuleConditionEntity,
 } from '@actual-app/core/types/models';
 
+import { SUBGROUP_INDENT_WIDTH } from '#components/budget/util';
 import { FinancialText } from '#components/FinancialText';
 import { showActivity } from '#components/reports/graphs/showActivity';
 import { Cell, Row } from '#components/table';
@@ -38,6 +39,11 @@ type ReportTableRowProps = {
   handleScroll?: UIEventHandler<HTMLDivElement>;
   height?: number;
   colorized?: boolean;
+  /** Nesting depth for indentation — 0 for a top-level row, 1 for a
+   * category or subgroup directly inside it, and so on. Applied only
+   * to the name cell, not the whole row, so numeric columns stay
+   * aligned across depths. */
+  depth?: number;
 };
 
 const getAmountColor = (amount: number) => {
@@ -66,6 +72,7 @@ export const ReportTableRow = memo(
     height,
     interval,
     colorized,
+    depth = 0,
   }: ReportTableRowProps) => {
     const average = Math.round(item[balanceTypeOp] / intervalsCount);
     const groupByItem = groupBy === 'Interval' ? 'date' : 'name';
@@ -123,6 +130,7 @@ export const ReportTableRow = memo(
               flexShrink: 0,
               flexGrow: 1,
               backgroundColor: style?.backgroundColor,
+              paddingLeft: depth * SUBGROUP_INDENT_WIDTH,
             }}
             valueStyle={compactStyle}
           />
