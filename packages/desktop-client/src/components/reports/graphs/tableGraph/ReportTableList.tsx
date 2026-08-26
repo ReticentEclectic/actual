@@ -54,8 +54,15 @@ export function ReportTableList({
   // A row with either its own leaf categories or nested subgroups
   // renders as a bold group header — a subgroup is still a group, so
   // it gets the same treatment as a top-level one, just indented.
+  // Checking .length rather than plain truthiness matters here: an
+  // empty array is still truthy in JS, and Interval-mode rows
+  // construct `categories: []` (empty, not undefined) — a plain
+  // truthy check would incorrectly treat every interval row as a
+  // group.
   function isGroupRow(item: GroupedEntity): boolean {
-    return !!item.categories || !!item.subgroups;
+    return (
+      (item.categories?.length ?? 0) > 0 || (item.subgroups?.length ?? 0) > 0
+    );
   }
 
   // Renders one row plus everything nested under it (own categories,
@@ -102,7 +109,7 @@ export function ReportTableList({
               subgroup.id || `${key}-sub-${i}`,
             ),
           )}
-        {depth === 0 && <Row height={20} />}
+        {depth === 0 && isGroupRow(item) && <Row height={20} />}
       </View>
     );
   }
