@@ -13,14 +13,21 @@ import { styles } from '@actual-app/components/styles';
 import { TextOneLine } from '@actual-app/components/text-one-line';
 import { theme } from '@actual-app/components/theme';
 import { View } from '@actual-app/components/view';
+import { groupCategoryGroupsIntoTree } from '@actual-app/core/shared/categories';
+import type { CategoryGroupNode } from '@actual-app/core/shared/categories';
 import type { CategoryGroupEntity } from '@actual-app/core/types/models';
 import { css, cx } from '@emotion/css';
 
+import { SUBGROUP_INDENT_WIDTH } from '#components/budget/util';
 import { useCategories } from '#hooks/useCategories';
 
 import { Autocomplete } from './Autocomplete';
 
-type CategoryGroupAutocompleteItem = CategoryGroupEntity;
+type CategoryGroupAutocompleteItem = CategoryGroupEntity & {
+  /** Nesting depth — 0 for a top-level group, 1 for a subgroup
+   * directly inside it, and so on. Used to indent the item. */
+  groupDepth?: number;
+};
 
 type CategoryGroupListProps = {
   items: CategoryGroupAutocompleteItem[];
@@ -78,6 +85,8 @@ function CategoryGroupList({
               highlighted: highlightedIndex === item.highlightedIndex,
               embedded,
               style: {
+                paddingLeft:
+                  20 + (item.groupDepth ?? 0) * SUBGROUP_INDENT_WIDTH,
                 ...(showHiddenItems &&
                   item.hidden && {
                     color: theme.pageTextSubdued,
@@ -118,7 +127,24 @@ export function CategoryGroupAutocomplete({
 
   const categoryGroupSuggestions: CategoryGroupAutocompleteItem[] =
     useMemo(() => {
-      const allSuggestions = categoryGroups || defaultCategoryGroups;
+      const tree = groupCategoryGroupsIntoTree(
+        categoryGroups || defaultCategoryGroups,
+      );
+
+      const allSuggestions: CategoryGroupAutocompleteItem[] = [];
+
+      // Depth-first: a group immediately followed by its own
+      // subgroups (each recursed into the same way), so the list
+      // reflects real tree order rather than flat sort_order across
+      // every group at every depth.
+      function collect(node: CategoryGroupNode, depth: number) {
+        allSuggestions.push({ ...node, groupDepth: depth });
+        for (const subgroup of node.subgroups ?? []) {
+          collect(subgroup, depth + 1);
+        }
+      }
+
+      tree.forEach(node => collect(node, 0));
 
       if (!showHiddenCategories) {
         return allSuggestions.filter(suggestion => !suggestion.hidden);

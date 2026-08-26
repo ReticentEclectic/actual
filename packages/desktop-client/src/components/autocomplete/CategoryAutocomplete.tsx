@@ -17,6 +17,8 @@ import { Text } from '@actual-app/components/text';
 import { TextOneLine } from '@actual-app/components/text-one-line';
 import { theme } from '@actual-app/components/theme';
 import { View } from '@actual-app/components/view';
+import { groupCategoryGroupsIntoTree } from '@actual-app/core/shared/categories';
+import type { CategoryGroupNode } from '@actual-app/core/shared/categories';
 import { integerToCurrency } from '@actual-app/core/shared/util';
 import type {
   CategoryEntity,
@@ -25,7 +27,10 @@ import type {
 import { css, cx } from '@emotion/css';
 
 import { useEnvelopeSheetValue } from '#components/budget/envelope/EnvelopeBudgetComponents';
-import { makeAmountFullStyle } from '#components/budget/util';
+import {
+  makeAmountFullStyle,
+  SUBGROUP_INDENT_WIDTH,
+} from '#components/budget/util';
 import { FinancialText } from '#components/FinancialText';
 import { useCategories } from '#hooks/useCategories';
 import { useSheetValue } from '#hooks/useSheetValue';
@@ -38,6 +43,10 @@ import { ItemHeader } from './ItemHeader';
 
 type CategoryAutocompleteItem = Omit<CategoryEntity, 'group'> & {
   group?: CategoryGroupEntity;
+  /** Nesting depth of `group` — 0 for a top-level group, 1 for a
+   * subgroup directly inside it, and so on. Used to indent both the
+   * group header and the category item itself. */
+  groupDepth?: number;
 };
 
 type CategoryListProps = {
@@ -126,6 +135,8 @@ function CategoryList({
                 renderCategoryItemGroupHeader({
                   title: `${group.name}${group.hidden ? ` ${t('(hidden)')}` : ''}`,
                   style: {
+                    paddingLeft:
+                      9 + (item.groupDepth ?? 0) * SUBGROUP_INDENT_WIDTH,
                     ...(showHiddenItems &&
                       group.hidden && { color: theme.pageTextSubdued }),
                   },
@@ -136,6 +147,8 @@ function CategoryList({
                 highlighted: highlightedIndex === item.highlightedIndex,
                 embedded,
                 style: {
+                  paddingLeft:
+                    20 + (item.groupDepth ?? 0) * SUBGROUP_INDENT_WIDTH,
                   ...(showHiddenItems &&
                     (item.hidden || group.hidden) && {
                       color: theme.pageTextSubdued,
@@ -185,20 +198,34 @@ export function CategoryAutocomplete({
   const { data: { grouped: defaultCategoryGroups } = { grouped: [] } } =
     useCategories();
   const categorySuggestions: CategoryAutocompleteItem[] = useMemo(() => {
-    const allSuggestions = (categoryGroups || defaultCategoryGroups).reduce(
-      (list, group) =>
-        list.concat(
-          (group.categories || [])
-            .filter(category => category.group === group.id)
-            .map(category => ({
-              ...category,
-              group,
-            })),
-        ),
-      showSplitOption
-        ? [{ id: 'split', name: '' } as CategoryAutocompleteItem]
-        : [],
+    const tree = groupCategoryGroupsIntoTree(
+      categoryGroups || defaultCategoryGroups,
     );
+
+    const allSuggestions: CategoryAutocompleteItem[] = showSplitOption
+      ? [{ id: 'split', name: '' } as CategoryAutocompleteItem]
+      : [];
+
+    // Depth-first: a group's own categories first, then each subgroup
+    // (and everything nested under it) in turn — so items end up in
+    // real tree order rather than flat sort_order across every group
+    // at every depth.
+    function collect(node: CategoryGroupNode, depth: number) {
+      for (const category of node.categories || []) {
+        if (category.group === node.id) {
+          allSuggestions.push({
+            ...category,
+            group: node,
+            groupDepth: depth,
+          });
+        }
+      }
+      for (const subgroup of node.subgroups ?? []) {
+        collect(subgroup, depth + 1);
+      }
+    }
+
+    tree.forEach(node => collect(node, 0));
 
     if (!showHiddenCategories) {
       return allSuggestions.filter(
