@@ -2,6 +2,7 @@ import { rangeInclusive } from '@actual-app/core/shared/months';
 import type { CategoryEntity } from '@actual-app/core/types/models';
 
 import {
+  filterCategoriesByGroupConditions,
   getLastSelectableMonth,
   getNextRunningBalance,
   isBaseCategory,
@@ -290,6 +291,120 @@ describe('createBudgetAnalysisSpreadsheet', () => {
       }
 
       expect(runningBalance).toBe(0);
+    });
+  });
+
+  describe('filterCategoriesByGroupConditions', () => {
+    const billsGroupId = 'bills-group';
+    const utilitiesGroupId = 'utilities-group';
+    const funGroupId = 'fun-group';
+
+    const allCategoryGroups = [
+      { id: billsGroupId, name: 'Bills', parent_group_id: null },
+      {
+        id: utilitiesGroupId,
+        name: 'Utilities',
+        parent_group_id: billsGroupId,
+      },
+      { id: funGroupId, name: 'Fun', parent_group_id: null },
+    ];
+
+    const rent = makeCategory({
+      id: 'rent',
+      name: 'Rent',
+      group: billsGroupId,
+    });
+    const electric = makeCategory({
+      id: 'electric',
+      name: 'Electric',
+      group: utilitiesGroupId,
+    });
+    const movies = makeCategory({
+      id: 'movies',
+      name: 'Movies',
+      group: funGroupId,
+    });
+
+    const categories = [rent, electric, movies];
+
+    it('returns all categories when there are no relevant conditions', () => {
+      const result = filterCategoriesByGroupConditions(
+        categories,
+        [],
+        'and',
+        allCategoryGroups,
+      );
+
+      expect(result).toEqual(categories);
+    });
+
+    it('matches an exact category id', () => {
+      const result = filterCategoriesByGroupConditions(
+        categories,
+        [{ field: 'category', op: 'is', value: 'rent' }],
+        'and',
+        allCategoryGroups,
+      );
+
+      expect(result).toEqual([rent]);
+    });
+
+    it('matches categories both directly in the target group and in a nested subgroup', () => {
+      const result = filterCategoriesByGroupConditions(
+        categories,
+        [{ field: 'category_group', op: 'is', value: billsGroupId }],
+        'and',
+        allCategoryGroups,
+      );
+
+      // Electric's immediate group is Utilities, not Bills — but Utilities
+      // is a subgroup of Bills, so it should match too, not just Rent.
+      expect(result).toEqual(expect.arrayContaining([rent, electric]));
+      expect(result).toHaveLength(2);
+      expect(result).not.toContain(movies);
+    });
+
+    it("text-based operators match only the category's own immediate group name, not descendants", () => {
+      const result = filterCategoriesByGroupConditions(
+        categories,
+        [{ field: 'category_group', op: 'contains', value: 'Bill' }],
+        'and',
+        allCategoryGroups,
+      );
+
+      // Electric's immediate group is "Utilities", which doesn't contain
+      // "Bill" — unlike the id-based 'is' case above, this should NOT expand
+      // to match it just because Utilities is nested under Bills.
+      expect(result).toEqual([rent]);
+    });
+
+    it('combines multiple conditions with AND', () => {
+      const result = filterCategoriesByGroupConditions(
+        categories,
+        [
+          { field: 'category_group', op: 'is', value: billsGroupId },
+          { field: 'category', op: 'is', value: 'rent' },
+        ],
+        'and',
+        allCategoryGroups,
+      );
+
+      expect(result).toEqual([rent]);
+    });
+
+    it('combines multiple conditions with OR', () => {
+      const result = filterCategoriesByGroupConditions(
+        categories,
+        [
+          { field: 'category_group', op: 'is', value: funGroupId },
+          { field: 'category', op: 'is', value: 'rent' },
+        ],
+        'or',
+        allCategoryGroups,
+      );
+
+      expect(result).toEqual(expect.arrayContaining([rent, movies]));
+      expect(result).toHaveLength(2);
     });
   });
 });

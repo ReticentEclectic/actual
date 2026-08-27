@@ -1,5 +1,6 @@
 // @ts-strict-ignore
 import { send } from '@actual-app/core/platform/client/connection';
+import { getDescendantGroupIds } from '@actual-app/core/shared/categories';
 import * as monthUtils from '@actual-app/core/shared/months';
 import type {
   CategoryEntity,
@@ -171,6 +172,140 @@ export function getNextRunningBalance({
   return hasBudgetData ? carryoverToNextMonth : runningBalance;
 }
 
+/**
+ * Filters a category list down to the ones matching `category`/
+ * `category_group` conditions. For `category_group` conditions with an
+ * id-based operator (is/isNot/oneOf/notOneOf), the target group(s) are
+ * expanded to include descendant subgroups — the same semantics already
+ * established for rule/report filtering elsewhere (see
+ * transaction-rules.ts's expandCategoryGroupCondition) — so a condition
+ * on a parent group also matches categories nested under it. Text-based
+ * operators (contains/doesNotContain/matches) are left as-is: they match
+ * a category's own immediate group name, which has no target id to
+ * expand.
+ */
+export function filterCategoriesByGroupConditions(
+  baseCategories: CategoryEntity[],
+  conditions: RuleConditionEntity[],
+  conditionsOp: 'and' | 'or',
+  allCategoryGroups: Array<{
+    id: string;
+    name: string;
+    parent_group_id?: string | null;
+  }>,
+): CategoryEntity[] {
+  // Build a UUID → name map for category groups so text-based operators
+  // (contains, doesNotContain, matches) can match against the group name.
+  const groupNameById = new Map<string, string>(
+    allCategoryGroups.map(g => [g.id, g.name] as const),
+  );
+
+  const relevantConditions = conditions.filter(
+    cond =>
+      !cond.customName &&
+      (cond.field === 'category' || cond.field === 'category_group'),
+  );
+
+  if (relevantConditions.length === 0) {
+    return baseCategories;
+  }
+
+  const idOps = new Set(['is', 'isNot', 'oneOf', 'notOneOf']);
+
+  // Evaluate each condition to get sets of matching categories.
+  // category_group conditions are expanded to their member categories via cat.group.
+  const conditionResults = relevantConditions.map(cond => {
+    const getKey = (cat: CategoryEntity) =>
+      cond.field === 'category_group' ? cat.group : cat.id;
+    const matchesRegex =
+      cond.op === 'matches' &&
+      typeof cond.value === 'string' &&
+      cond.value.length <= 256
+        ? (() => {
+            try {
+              return new RegExp(cond.value, 'i');
+            } catch {
+              return null;
+            }
+          })()
+        : null;
+
+    const expandedGroupIds =
+      cond.field === 'category_group' && idOps.has(cond.op)
+        ? (Array.isArray(cond.value) ? cond.value : [cond.value]).flatMap(
+            groupId =>
+              typeof groupId === 'string'
+                ? getDescendantGroupIds(groupId, allCategoryGroups)
+                : [],
+          )
+        : null;
+
+    return baseCategories.filter((cat: CategoryEntity) => {
+      const key = getKey(cat);
+      // For text-based operators, compare against the human-readable name
+      // rather than the UUID. For category_group, resolve UUID → name via
+      // the map; for category, use the category's own name directly.
+      const textValue =
+        cond.field === 'category_group'
+          ? (groupNameById.get(key) ?? key)
+          : cat.name;
+      if (cond.op === 'is') {
+        return expandedGroupIds
+          ? expandedGroupIds.includes(key)
+          : cond.value === key;
+      } else if (cond.op === 'isNot') {
+        return expandedGroupIds
+          ? !expandedGroupIds.includes(key)
+          : cond.value !== key;
+      } else if (cond.op === 'oneOf') {
+        return expandedGroupIds
+          ? expandedGroupIds.includes(key)
+          : Array.isArray(cond.value) && cond.value.includes(key);
+      } else if (cond.op === 'notOneOf') {
+        return expandedGroupIds
+          ? !expandedGroupIds.includes(key)
+          : Array.isArray(cond.value) && !cond.value.includes(key);
+      } else if (cond.op === 'contains') {
+        return (
+          typeof cond.value === 'string' &&
+          textValue.toLowerCase().includes(cond.value.toLowerCase())
+        );
+      } else if (cond.op === 'doesNotContain') {
+        return (
+          typeof cond.value === 'string' &&
+          !textValue.toLowerCase().includes(cond.value.toLowerCase())
+        );
+      } else if (cond.op === 'matches') {
+        return matchesRegex?.test(textValue) ?? false;
+      }
+      return false;
+    });
+  });
+
+  // Combine results based on conditionsOp
+  if (conditionsOp === 'or') {
+    // OR: Union of all matching categories
+    const categoryIds = new Set(conditionResults.flat().map(cat => cat.id));
+    return baseCategories.filter(cat => categoryIds.has(cat.id));
+  }
+
+  // AND: Intersection of all matching categories
+  if (conditionResults.length === 0) {
+    return [];
+  }
+  const firstSet = new Set(conditionResults[0].map(cat => cat.id));
+  for (let i = 1; i < conditionResults.length; i++) {
+    const currentIds = new Set(conditionResults[i].map(cat => cat.id));
+    // Keep only categories that are in both sets
+    for (const id of firstSet) {
+      if (!currentIds.has(id)) {
+        firstSet.delete(id);
+      }
+    }
+  }
+  return baseCategories.filter(cat => firstSet.has(cat.id));
+}
+
 export function createBudgetAnalysisSpreadsheet({
   conditions = [],
   conditionsOp = 'and',
@@ -186,111 +321,18 @@ export function createBudgetAnalysisSpreadsheet({
     const { list: allCategories, grouped: allCategoryGroups } =
       await send('get-categories');
 
-    // Build a UUID → name map for category groups so text-based operators
-    // (contains, doesNotContain, matches) can match against the group name.
-    const groupNameById = new Map<string, string>(
-      allCategoryGroups.map(
-        (g: { id: string; name: string }) => [g.id, g.name] as const,
-      ),
-    );
-
-    // Filter categories based on conditions (supports both 'category' and 'category_group' fields)
-    const relevantConditions = conditions.filter(
-      cond =>
-        !cond.customName &&
-        (cond.field === 'category' || cond.field === 'category_group'),
-    );
-
     // Base set: expense categories only; hidden categories are included when
     // showHiddenCategories is true so historic data is not misrepresented.
     const baseCategories = allCategories.filter((cat: CategoryEntity) =>
       isBaseCategory(cat, showHiddenCategories),
     );
 
-    let categoriesToInclude: CategoryEntity[];
-    if (relevantConditions.length > 0) {
-      // Evaluate each condition to get sets of matching categories.
-      // category_group conditions are expanded to their member categories via cat.group.
-      const conditionResults = relevantConditions.map(cond => {
-        const getKey = (cat: CategoryEntity) =>
-          cond.field === 'category_group' ? cat.group : cat.id;
-        const matchesRegex =
-          cond.op === 'matches' &&
-          typeof cond.value === 'string' &&
-          cond.value.length <= 256
-            ? (() => {
-                try {
-                  return new RegExp(cond.value, 'i');
-                } catch {
-                  return null;
-                }
-              })()
-            : null;
-        return baseCategories.filter((cat: CategoryEntity) => {
-          const key = getKey(cat);
-          // For text-based operators, compare against the human-readable name
-          // rather than the UUID. For category_group, resolve UUID → name via
-          // the map; for category, use the category's own name directly.
-          const textValue =
-            cond.field === 'category_group'
-              ? (groupNameById.get(key) ?? key)
-              : cat.name;
-          if (cond.op === 'is') {
-            return cond.value === key;
-          } else if (cond.op === 'isNot') {
-            return cond.value !== key;
-          } else if (cond.op === 'oneOf') {
-            return Array.isArray(cond.value) && cond.value.includes(key);
-          } else if (cond.op === 'notOneOf') {
-            return Array.isArray(cond.value) && !cond.value.includes(key);
-          } else if (cond.op === 'contains') {
-            return (
-              typeof cond.value === 'string' &&
-              textValue.toLowerCase().includes(cond.value.toLowerCase())
-            );
-          } else if (cond.op === 'doesNotContain') {
-            return (
-              typeof cond.value === 'string' &&
-              !textValue.toLowerCase().includes(cond.value.toLowerCase())
-            );
-          } else if (cond.op === 'matches') {
-            return matchesRegex?.test(textValue) ?? false;
-          }
-          return false;
-        });
-      });
-
-      // Combine results based on conditionsOp
-      if (conditionsOp === 'or') {
-        // OR: Union of all matching categories
-        const categoryIds = new Set(conditionResults.flat().map(cat => cat.id));
-        categoriesToInclude = baseCategories.filter(cat =>
-          categoryIds.has(cat.id),
-        );
-      } else {
-        // AND: Intersection of all matching categories
-        if (conditionResults.length === 0) {
-          categoriesToInclude = [];
-        } else {
-          const firstSet = new Set(conditionResults[0].map(cat => cat.id));
-          for (let i = 1; i < conditionResults.length; i++) {
-            const currentIds = new Set(conditionResults[i].map(cat => cat.id));
-            // Keep only categories that are in both sets
-            for (const id of firstSet) {
-              if (!currentIds.has(id)) {
-                firstSet.delete(id);
-              }
-            }
-          }
-          categoriesToInclude = baseCategories.filter(cat =>
-            firstSet.has(cat.id),
-          );
-        }
-      }
-    } else {
-      // No category or category group filter — include all expense categories
-      categoriesToInclude = baseCategories;
-    }
+    const categoriesToInclude = filterCategoriesByGroupConditions(
+      baseCategories,
+      conditions,
+      conditionsOp,
+      allCategoryGroups,
+    );
 
     // Get monthly intervals (Budget Analysis only supports monthly)
     const intervals = monthUtils.rangeInclusive(
