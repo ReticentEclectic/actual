@@ -64,6 +64,15 @@ const getDonutDimensions = (
 // Color helpers
 // ---------------------------------------------------------------------------
 
+// Recursively collect every leaf category under a group, including ones
+// nested in subgroups. grouped-spreadsheet.ts nests a subgroup's own
+// categories under group.subgroups rather than listing them flat, so a
+// plain `group.categories` read silently misses anything in a subgroup.
+const collectAllCategories = (group: GroupedEntity): GroupedEntity[] => [
+  ...(group.categories ?? []),
+  ...(group.subgroups ?? []).flatMap(collectAllCategories),
+];
+
 const resolveCSSVariable = (color: string): string => {
   if (!color.startsWith('var(')) return color;
   const inner = color.slice(4, -1).trim();
@@ -109,8 +118,10 @@ const buildColorMap = (
 
     acc.set(group.id, groupColor);
 
-    // Fix 1: capture cats once to avoid group.categories.length on undefined
-    const cats = group.categories ?? [];
+    // Recurse into subgroups too, not just this group's own direct
+    // categories — grouped-spreadsheet.ts nests a subgroup's own
+    // categories under group.subgroups rather than listing them flat.
+    const cats = collectAllCategories(group);
     cats.forEach((cat, i) => {
       if (!cat.id) return;
       const shade = 0.15 + (i / Math.max(cats.length, 1)) * 0.5;
@@ -391,7 +402,7 @@ export function DonutGraph({
 
     const adjustedGroups = data.groupedData
       .map(group => {
-        const visibleCats = group.categories ?? [];
+        const visibleCats = collectAllCategories(group);
         return {
           ...group,
           totalAssets: visibleCats.reduce((sum, c) => sum + c.totalAssets, 0),
@@ -409,7 +420,7 @@ export function DonutGraph({
 
     return {
       adjustedGroupData: adjustedGroups,
-      flatCategories: data.groupedData.flatMap(g => g.categories ?? []),
+      flatCategories: data.groupedData.flatMap(collectAllCategories),
     };
   }, [isCategoryGroup, data.groupedData, balanceTypeOp]);
 
