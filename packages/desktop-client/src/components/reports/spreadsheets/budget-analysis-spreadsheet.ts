@@ -10,6 +10,7 @@ import type {
 import type { useSpreadsheet } from '#hooks/useSpreadsheet';
 
 import type { BudgetMonthCell } from './budgetMonthCell';
+import { matchesCategoryFieldCondition } from './matchesCategoryFieldCondition';
 
 type BudgetAnalysisIntervalData = {
   date: string;
@@ -217,18 +218,6 @@ export function filterCategoriesByGroupConditions(
   const conditionResults = relevantConditions.map(cond => {
     const getKey = (cat: CategoryEntity) =>
       cond.field === 'category_group' ? cat.group : cat.id;
-    const matchesRegex =
-      cond.op === 'matches' &&
-      typeof cond.value === 'string' &&
-      cond.value.length <= 256
-        ? (() => {
-            try {
-              return new RegExp(cond.value, 'i');
-            } catch {
-              return null;
-            }
-          })()
-        : null;
 
     const expandedGroupIds =
       cond.field === 'category_group' && idOps.has(cond.op)
@@ -238,7 +227,7 @@ export function filterCategoriesByGroupConditions(
                 ? getDescendantGroupIds(groupId, allCategoryGroups)
                 : [],
           )
-        : null;
+        : undefined;
 
     return baseCategories.filter((cat: CategoryEntity) => {
       const key = getKey(cat);
@@ -249,36 +238,12 @@ export function filterCategoriesByGroupConditions(
         cond.field === 'category_group'
           ? (groupNameById.get(key) ?? key)
           : cat.name;
-      if (cond.op === 'is') {
-        return expandedGroupIds
-          ? expandedGroupIds.includes(key)
-          : cond.value === key;
-      } else if (cond.op === 'isNot') {
-        return expandedGroupIds
-          ? !expandedGroupIds.includes(key)
-          : cond.value !== key;
-      } else if (cond.op === 'oneOf') {
-        return expandedGroupIds
-          ? expandedGroupIds.includes(key)
-          : Array.isArray(cond.value) && cond.value.includes(key);
-      } else if (cond.op === 'notOneOf') {
-        return expandedGroupIds
-          ? !expandedGroupIds.includes(key)
-          : Array.isArray(cond.value) && !cond.value.includes(key);
-      } else if (cond.op === 'contains') {
-        return (
-          typeof cond.value === 'string' &&
-          textValue.toLowerCase().includes(cond.value.toLowerCase())
-        );
-      } else if (cond.op === 'doesNotContain') {
-        return (
-          typeof cond.value === 'string' &&
-          !textValue.toLowerCase().includes(cond.value.toLowerCase())
-        );
-      } else if (cond.op === 'matches') {
-        return matchesRegex?.test(textValue) ?? false;
-      }
-      return false;
+      return matchesCategoryFieldCondition(
+        key,
+        textValue,
+        cond,
+        expandedGroupIds,
+      );
     });
   });
 
