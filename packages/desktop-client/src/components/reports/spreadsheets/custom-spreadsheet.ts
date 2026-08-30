@@ -1,4 +1,5 @@
 import { send } from '@actual-app/core/platform/client/connection';
+import { getDescendantGroupIds } from '@actual-app/core/shared/categories';
 import * as monthUtils from '@actual-app/core/shared/months';
 import type {
   AccountEntity,
@@ -161,6 +162,21 @@ export function createCustomSpreadsheet({
     const groupsByCategory =
       groupByLabel === 'category' || groupByLabel === 'categoryGroup';
 
+    // Precompute once (not per-interval) which group ids should count
+    // toward each item's total — itself plus every descendant subgroup —
+    // so a parent group's total correctly includes categories nested in
+    // its subgroups. Only meaningful for groupByLabel === 'categoryGroup';
+    // category/payee/account groupings don't nest.
+    const matchingGroupIdsByItem: Record<string, string[]> =
+      groupByLabel === 'categoryGroup'
+        ? Object.fromEntries(
+            groupByList.map(item => [
+              item.id,
+              getDescendantGroupIds(item.id, categories.grouped),
+            ]),
+          )
+        : {};
+
     const intervalData = intervals.reduce(
       (arr: IntervalEntity[], intervalItem, index) => {
         let perIntervalAssets = 0;
@@ -172,6 +188,11 @@ export function createCustomSpreadsheet({
 
         groupByList.map(item => {
           let stackAmounts = 0;
+          const matchIds = matchingGroupIdsByItem[item.id];
+          const matchesItem = (row: QueryDataEntity) =>
+            matchIds
+              ? matchIds.includes(row[groupByLabel] as string)
+              : row[groupByLabel] === (item.id ?? null);
 
           const intervalAssets = filterHiddenItems(
             item,
@@ -184,7 +205,7 @@ export function createCustomSpreadsheet({
             .filter(
               asset =>
                 asset.date === intervalItem &&
-                (asset[groupByLabel] === (item.id ?? null) ||
+                (matchesItem(asset) ||
                   (item.uncategorized_id && groupsByCategory)),
             )
             .reduce((a, v) => a + v.amount, 0);
@@ -201,7 +222,7 @@ export function createCustomSpreadsheet({
             .filter(
               debt =>
                 debt.date === intervalItem &&
-                (debt[groupByLabel] === (item.id ?? null) ||
+                (matchesItem(debt) ||
                   (item.uncategorized_id && groupsByCategory)),
             )
             .reduce((a, v) => a + v.amount, 0);
@@ -280,6 +301,7 @@ export function createCustomSpreadsheet({
         showUncategorized,
         startDate,
         endDate,
+        matchingGroupIds: matchingGroupIdsByItem[item.id],
       });
       return { ...calc };
     });
