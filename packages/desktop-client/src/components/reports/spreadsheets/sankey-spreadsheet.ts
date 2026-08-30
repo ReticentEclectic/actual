@@ -1,5 +1,6 @@
 import { theme } from '@actual-app/components/theme';
 import { send } from '@actual-app/core/platform/client/connection';
+import { getDescendantGroupIds } from '@actual-app/core/shared/categories';
 import * as monthUtils from '@actual-app/core/shared/months';
 import { q } from '@actual-app/core/shared/query';
 import type {
@@ -10,6 +11,7 @@ import { t } from 'i18next';
 
 import { getColorScale } from '#components/reports/chart-theme';
 import type { useSpreadsheet } from '#hooks/useSpreadsheet';
+import { matchesCategoryFieldCondition } from '#components/reports/spreadsheets/matchesCategoryFieldCondition';
 import { aqlQuery } from '#queries/aqlQuery';
 
 type BudgetMonthCategory = {
@@ -240,13 +242,18 @@ export function createBudgetSpreadsheet(
     const months =
       end && end !== start ? monthUtils.rangeInclusive(start, end) : [start];
 
-    const monthResponses = await Promise.all(
-      months.map(
-        m =>
-          send('api/budget-month', {
-            month: m,
-          }) as unknown as Promise<BudgetMonthResponse>,
-      ),
+    const [monthResponses, { grouped: allCategoryGroups }] = await Promise.all(
+      [
+        Promise.all(
+          months.map(
+            m =>
+              send('api/budget-month', {
+                month: m,
+              }) as unknown as Promise<BudgetMonthResponse>,
+          ),
+        ),
+        send('get-categories'),
+      ],
     );
 
     const accumulate_months = monthResponses.reduce(
@@ -305,6 +312,7 @@ export function createBudgetSpreadsheet(
       categoryGroups,
       conditions,
       conditionsOp,
+      allCategoryGroups,
     );
 
     const categoryData: CategoryEntry[] = filteredCategoryGroups
@@ -395,6 +403,7 @@ export function filterCategoryGroups(
   categoryGroups: BudgetMonthGroup[],
   conditions: RuleConditionEntity[],
   conditionsOp: 'and' | 'or',
+  allCategoryGroups: Array<{ id: string; parent_group_id?: string | null }>,
 ): BudgetMonthGroup[] {
   const categoryConditions = conditions.filter(
     cond => cond.field === GraphLayers.Category,
@@ -407,47 +416,25 @@ export function filterCategoryGroups(
     return categoryGroups;
   }
 
-  const matchesStringCondition = (
-    id: string,
-    name: string,
-    cond: RuleConditionEntity,
-  ): boolean => {
-    const value = cond.value;
-    if (typeof cond.op !== 'string') {
-      throw new Error('Invalid op');
-    }
-    const op = cond.op;
-    if (op === 'is') return id === value;
-    if (op === 'isNot') return id !== value;
-    if (op === 'oneOf') return Array.isArray(value) && value.includes(id);
-    if (op === 'notOneOf') return !Array.isArray(value) || !value.includes(id);
-    if (op === 'contains') {
-      return (
-        typeof value === 'string' &&
-        name.toLowerCase().includes(value.toLowerCase())
+  // For category_group conditions with an id-based operator, expand the
+  // target group(s) to include descendant subgroups, so filtering the
+  // report by a parent group also includes categories nested under it.
+  // Computed once per condition (not per category/group pair).
+  const idOps = new Set(['is', 'isNot', 'oneOf', 'notOneOf']);
+  const expandedIdsByCondition = new Map<RuleConditionEntity, string[]>();
+  categoryGroupConditions.forEach(cond => {
+    if (idOps.has(cond.op)) {
+      const ids = Array.isArray(cond.value) ? cond.value : [cond.value];
+      expandedIdsByCondition.set(
+        cond,
+        ids.flatMap(groupId =>
+          typeof groupId === 'string'
+            ? getDescendantGroupIds(groupId, allCategoryGroups)
+            : [],
+        ),
       );
     }
-    if (op === 'doesNotContain') {
-      return (
-        typeof value === 'string' &&
-        !name.toLowerCase().includes(value.toLowerCase())
-      );
-    }
-    if (op === 'matches') {
-      if (typeof value !== 'string') return false;
-      if (value.length > 256) return false;
-      try {
-        const regex =
-          value.startsWith('/') && value.lastIndexOf('/') > 0
-            ? new RegExp(value.slice(1, value.lastIndexOf('/')), 'i')
-            : new RegExp(value, 'i');
-        return regex.test(name);
-      } catch {
-        return false;
-      }
-    }
-    return false;
-  };
+  });
 
   const categoryMatchesConditions = (
     catId: string,
@@ -456,9 +443,14 @@ export function filterCategoryGroups(
     groupName: string,
   ): boolean => {
     const matchesCat = (cond: RuleConditionEntity) =>
-      matchesStringCondition(catId, catName, cond);
+      matchesCategoryFieldCondition(catId, catName, cond);
     const matchesGroup = (cond: RuleConditionEntity) =>
-      matchesStringCondition(groupId, groupName, cond);
+      matchesCategoryFieldCondition(
+        groupId,
+        groupName,
+        cond,
+        expandedIdsByCondition.get(cond),
+      );
 
     if (conditionsOp === 'or') {
       return (

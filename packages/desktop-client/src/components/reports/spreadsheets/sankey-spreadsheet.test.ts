@@ -345,7 +345,7 @@ describe('sankey-spreadsheet', () => {
         ]),
       ];
 
-      const result = filterCategoryGroups(groups, [], 'and');
+      const result = filterCategoryGroups(groups, [], 'and', []);
       expect(result).toHaveLength(2);
     });
 
@@ -361,7 +361,7 @@ describe('sankey-spreadsheet', () => {
         { field: 'category', op: 'is', value: 'c1', customName: '' },
       ];
 
-      const result = filterCategoryGroups(groups, conditions, 'and');
+      const result = filterCategoryGroups(groups, conditions, 'and', []);
       expect(result).toHaveLength(1);
       expect(result[0].categories).toHaveLength(1);
       expect(result[0].categories[0].id).toBe('c1');
@@ -379,7 +379,7 @@ describe('sankey-spreadsheet', () => {
         { field: 'category', op: 'isNot', value: 'c1', customName: '' },
       ];
 
-      const result = filterCategoryGroups(groups, conditions, 'and');
+      const result = filterCategoryGroups(groups, conditions, 'and', []);
       expect(result).toHaveLength(1);
       expect(result[0].categories).toHaveLength(1);
       expect(result[0].categories[0].id).toBe('c2');
@@ -402,7 +402,7 @@ describe('sankey-spreadsheet', () => {
         },
       ];
 
-      const result = filterCategoryGroups(groups, conditions, 'and');
+      const result = filterCategoryGroups(groups, conditions, 'and', []);
       expect(result).toHaveLength(1);
       expect(result[0].categories).toHaveLength(1);
       expect(result[0].categories[0].name).toBe('Groceries');
@@ -422,7 +422,7 @@ describe('sankey-spreadsheet', () => {
         { field: 'category_group', op: 'is', value: 'g2', customName: '' },
       ];
 
-      const result = filterCategoryGroups(groups, conditions, 'and');
+      const result = filterCategoryGroups(groups, conditions, 'and', []);
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe('g2');
     });
@@ -438,7 +438,7 @@ describe('sankey-spreadsheet', () => {
         { field: 'category', op: 'is', value: 'nonexistent', customName: '' },
       ];
 
-      const result = filterCategoryGroups(groups, conditions, 'and');
+      const result = filterCategoryGroups(groups, conditions, 'and', []);
       expect(result).toHaveLength(0);
     });
 
@@ -455,11 +455,69 @@ describe('sankey-spreadsheet', () => {
         { field: 'category', op: 'oneOf', value: ['c1', 'c3'], customName: '' },
       ];
 
-      const result = filterCategoryGroups(groups, conditions, 'and');
+      const result = filterCategoryGroups(groups, conditions, 'and', []);
       expect(result).toHaveLength(1);
       expect(result[0].categories).toHaveLength(2);
       expect(result[0].categories.map(c => c.id)).toContain('c1');
       expect(result[0].categories.map(c => c.id)).toContain('c3');
+    });
+
+    it('a category_group condition also matches categories in a nested subgroup', () => {
+      // Bills (top-level) has a subgroup Utilities; Rent is directly in
+      // Bills, Electric is in Utilities. A condition on Bills should
+      // match both, not just Rent.
+      const allCategoryGroups = [
+        { id: 'bills', parent_group_id: null },
+        { id: 'utilities', parent_group_id: 'bills' },
+        { id: 'fun', parent_group_id: null },
+      ];
+
+      const groups = [
+        createCategoryGroup('bills', 'Bills', false, [
+          { id: 'rent', name: 'Rent' },
+        ]),
+        createCategoryGroup('utilities', 'Utilities', false, [
+          { id: 'electric', name: 'Electric' },
+        ]),
+        createCategoryGroup('fun', 'Fun', false, [
+          { id: 'movies', name: 'Movies' },
+        ]),
+      ];
+
+      const conditions: RuleConditionEntity[] = [
+        { field: 'category_group', op: 'is', value: 'bills', customName: '' },
+      ];
+
+      const result = filterCategoryGroups(
+        groups,
+        conditions,
+        'and',
+        allCategoryGroups,
+      );
+
+      expect(result.map(g => g.id)).toEqual(
+        expect.arrayContaining(['bills', 'utilities']),
+      );
+      expect(result.map(g => g.id)).not.toContain('fun');
+    });
+
+    it('does not expand descendants when allCategoryGroups is empty (backward compatible)', () => {
+      const groups = [
+        createCategoryGroup('bills', 'Bills', false, [
+          { id: 'rent', name: 'Rent' },
+        ]),
+        createCategoryGroup('utilities', 'Utilities', false, [
+          { id: 'electric', name: 'Electric' },
+        ]),
+      ];
+
+      const conditions: RuleConditionEntity[] = [
+        { field: 'category_group', op: 'is', value: 'bills', customName: '' },
+      ];
+
+      const result = filterCategoryGroups(groups, conditions, 'and', []);
+
+      expect(result.map(g => g.id)).toEqual(['bills']);
     });
   });
 

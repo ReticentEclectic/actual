@@ -5,8 +5,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { expectSnapshotWithDiffer } from '#mocks/util';
 import * as connection from '#platform/server/connection';
 import * as fs from '#platform/server/fs';
+import { q } from '#shared/query';
 import * as monthUtils from '#shared/months';
 
+import { aqlQuery } from './aql';
 import * as budgetActions from './budget/actions';
 import * as budget from './budget/base';
 import * as db from './db';
@@ -441,5 +443,49 @@ describe('Categories', () => {
     // The deleted category should not leave any overspending behind
     expect(sheet.getCellValue(nextSheetName, 'last-month-overspent')).toBe(0);
     expect(sheet.getCellValue(nextSheetName, 'to-budget')).toBe(toBudget);
+  });
+});
+
+describe('make-filters-from-conditions', () => {
+  test('category_group condition matches categories in a nested subgroup', async () => {
+    const { billsId, electricId } = await runMutator(async () => {
+      const billsId = await db.insertCategoryGroup({ name: 'Bills' });
+      const utilitiesId = await db.insertCategoryGroup({
+        name: 'Utilities',
+        parent_group_id: billsId,
+      });
+      const electricId = await db.insertCategory({
+        name: 'Electric',
+        cat_group: utilitiesId,
+      });
+      await db.insertAccount({ id: 'acct', name: 'Checking' });
+      await db.insertTransaction({
+        id: 'elec-trans',
+        date: '2017-01-01',
+        account: 'acct',
+        amount: -1000,
+        category: electricId,
+      });
+      return { billsId, electricId };
+    });
+
+    const { filters } = await runHandler(
+      handlers['make-filters-from-conditions'],
+      {
+        conditions: [{ field: 'category_group', op: 'is', value: billsId }],
+      },
+    );
+
+    const { data } = await aqlQuery(
+      q('transactions')
+        .filter({ $and: filters })
+        .select('id'),
+    );
+
+    // Electric's immediate group is Utilities, not Bills directly — this
+    // confirms the filter correctly walks the ancestor chain rather than
+    // matching only an exact group id.
+    expect(data.map((t: { id: string }) => t.id)).toContain('elec-trans');
+    expect(electricId).toBeDefined();
   });
 });

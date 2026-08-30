@@ -43,6 +43,7 @@ import { app as toolsApp } from './tools/app';
 import { app as transactionsApp } from './transactions/app';
 import * as rules from './transactions/transaction-rules';
 import { redo, undo } from './undo';
+import type { RuleConditionEntity } from '#types/models';
 
 // handlers
 
@@ -62,7 +63,20 @@ handlers['make-filters-from-conditions'] = async function ({
   conditions,
   applySpecialCases,
 }) {
-  return rules.conditionsToAQL(conditions, { applySpecialCases });
+  const conditionList = conditions as RuleConditionEntity[];
+
+  // Only fetch the category groups when actually needed — most filter
+  // conditions (payee, date, amount, etc) never touch category_group at
+  // all, so this avoids an unnecessary query on the common path.
+  const categoryGroups = conditionList.some(
+    cond => cond.field === 'category_group',
+  )
+    ? await db.getCategoriesGrouped()
+    : [];
+  return rules.conditionsToAQL(conditionList, {
+    applySpecialCases,
+    categoryGroups,
+  });
 };
 
 handlers['query'] = async function (query) {
